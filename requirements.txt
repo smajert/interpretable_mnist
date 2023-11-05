@@ -1,0 +1,9 @@
+# developed with python 3.10
+- black==23.10.*
+- flake8==6.1.*
+- lightning==2.1.*
+- mypy==1.6.*
+- numpy
+- pylint==3.0.*
+- pytest
+- pytorch==2.1.*
