@@ -2,6 +2,7 @@ from interpretable_mnist import params
 
 import lightning.pytorch as pl
 import torch
+from torchmetrics import Accuracy
 
 
 class SimpleConvNet(torch.nn.Module):
@@ -46,14 +47,30 @@ class ProtoPoolMNIST(pl.LightningModule):
         super().__init__()
         self.conv_net = SimpleConvNet()
 
-    def training_step(self, batch: list[torch.Tensor, torch.Tensor], batch_idx: int) -> torch.Tensor:  # todo what does this return?
-        x, y = batch
-        y = torch.nn.functional.one_hot(y, num_classes=10).float()
-        conv_out = self.conv_net(x)
-        loss = torch.nn.CrossEntropyLoss()(conv_out, y)
-        self.log("train_loss", loss, prog_bar=True, on_step=True, on_epoch=True)
-        return loss
-
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=params.Training.learning_rate)
         return optimizer
+
+    def generic_batch_processing(
+        self, step_name: str, batch: tuple[torch.Tensor, torch.Tensor]
+    ) -> torch.Tensor:
+        x, y = batch
+        y_one_hot = torch.nn.functional.one_hot(y, num_classes=10).float()
+        y_pred = self.conv_net(x)
+        loss = torch.nn.CrossEntropyLoss()(y_pred, y_one_hot)
+        self.log(f"{step_name}_loss", loss, prog_bar=True, on_step=True, on_epoch=True)
+
+        acc_calculator = Accuracy(task="multiclass", num_classes=10).to(self.device)
+        accuracy = acc_calculator(y_pred, y)
+        self.log(f"{step_name}_acc", accuracy, prog_bar=True, on_step=True, on_epoch=True)
+
+        return loss
+
+    def training_step(self, batch: list[torch.Tensor], batch_idx: int) -> torch.Tensor:
+        return self.generic_batch_processing("train", (batch[0], batch[1]))
+
+    def validation_step(self, val_batch: list[torch.Tensor], batch_idx: int) -> torch.Tensor:
+        return self.generic_batch_processing("validation", (val_batch[0], val_batch[1]))
+
+    def test_step(self, test_batch: list[torch.Tensor], batch_idx: int) -> torch.Tensor:
+        return self.generic_batch_processing("test", (test_batch[0], test_batch[1]))

@@ -105,15 +105,8 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# default binary data folders
 /data
+/outs
 /plots
-
-# data folder
-/data
-
-# sketches
-/figures/drawings
-
-
-# pytorch lightning logs
-lightning_logs
