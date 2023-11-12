@@ -1,10 +1,10 @@
 import torch
-from torch.utils import data
 import lightning.pytorch as pl
 
 from interpretable_mnist import params
 from interpretable_mnist.data import load_mnist
-from interpretable_mnist.model import ProtoPoolMNIST
+from interpretable_mnist.conv_net import ConvNetMNIST
+
 
 
 if __name__ == "__main__":
@@ -16,10 +16,10 @@ if __name__ == "__main__":
         accelerator="gpu",
         devices=1,
         max_epochs=params.Training.n_epochs,
-        default_root_dir=params.OUTS_BASE_DIR
+        default_root_dir=params.OUTS_BASE_DIR,
     )
     trainer.fit(
-        model=ProtoPoolMNIST(),
+        model=ConvNetMNIST(),
         train_dataloaders=mnist_train,
         val_dataloaders=mnist_valid
     )
