@@ -2,6 +2,7 @@ from interpretable_mnist import params
 from interpretable_mnist.base_architecture import SimpleConvNetRoot
 
 import lightning.pytorch as pl
+import numpy as np
 import torch
 
 
@@ -23,7 +24,39 @@ def _get_starting_output_layer_class_connections(n_classes: int, n_slots_per_cla
         # connect first `n_slots_per_class` with the class "0", second `n_slots_per_class` with class "1", etc.
         starting_weights[i, i // n_slots_per_class] = 1
 
-    return starting_weights  # todo write test whether this is correct
+    return starting_weights
+
+
+def modified_gumbel_softmax(proto_presence: torch.Tensor, tau: float) -> torch.Tensor:
+    r"""
+    Gumbel softmax with modified scaling according to [1], section 8 (supplement).
+    Different from the normal Gumbel softmax, this version starts to consider noise
+    (i.e. the values drawn from the Gumbel distribution $\eta_i$) less as tau decreases.
+
+    :param proto_presence: [c, p, s]: Tensor assigning prototypes to classes (q in [1])
+    :param tau: non-negative scalar temperature
+    :return: [c, p, s] - Modified Gumbel softmax applied to `proto_presence`
+    """
+    return torch.nn.functional.gumbel_softmax(proto_presence / tau, tau=1, dim=1)
+
+
+def gumbel_cooling_schedule(i_epoch: int) -> float:
+    """
+    Get tau for the `i_epoch` epoch.
+
+    :param i_epoch: Epoch to get the appropriate tau value for the modified gumbel softmax
+    :return: tau at epoch `i_epoch`
+    """
+    start_inv_tau = 1.3
+    end_inv_tau = 10 ** 3
+    n_cooling_epochs = 30
+
+    # alpha from [1]: alpha = (end_inv_tau / start_inv_tau) ** 2 / epoch_interval
+    inv_tau = (
+        end_inv_tau * np.sqrt(i_epoch / n_cooling_epochs) + start_inv_tau
+        if i_epoch < n_cooling_epochs else end_inv_tau
+    )
+    return 1 / inv_tau
 
 
 class ProtoPoolMNIST(pl.LightningModule):
@@ -53,10 +86,17 @@ class ProtoPoolMNIST(pl.LightningModule):
 
         # --- Setup fully connected output layer h: ---
         self.output_layer = torch.nn.Linear(n_classes * n_slots_per_class, n_classes, bias=False)
-        self.output_layer.requires_gard_ = False
+        self.output_layer.requires_grad_ = False
         self.output_layer.weight.data.copy_(  # need to transpose to correctly fit into weights of layer
             torch.t(_get_starting_output_layer_class_connections(n_classes, n_slots_per_class))
         )
+
+    def forward(self, x: torch.Tensor):
+        tau = gumbel_cooling_schedule(self.current_epoch)
+        proto_presence = modified_gumbel_softmax(self.proto_presence, tau=tau)
+        # todo: implement gumbel scaling as described in [1] supplement 8
+        pass
+
 
     def configure_optimizers(self):
         # todo: This probably needs more optimizers
