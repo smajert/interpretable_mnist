@@ -94,7 +94,6 @@ class ProtoPoolMNIST(pl.LightningModule):
     def forward(self, x: torch.Tensor):
         tau = gumbel_cooling_schedule(self.current_epoch)
         proto_presence = modified_gumbel_softmax(self.proto_presence, tau=tau)
-        # todo: implement gumbel scaling as described in [1] supplement 8
         pass
 
 
