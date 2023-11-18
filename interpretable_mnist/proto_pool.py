@@ -60,12 +60,13 @@ def gumbel_cooling_schedule(i_epoch: int) -> float:
 
 
 class ProtoPoolMNIST(pl.LightningModule):
-    def __init__(self, n_classes: int, n_prototypes: int, n_slots_per_class: int, prototype_depth: int) -> None:
+    def __init__(self, n_classes: int, n_prototypes: int, n_slots_per_class: int, prototype_depth: int = 64) -> None:
         """
         :param n_classes: c - Amount of different classes to predict; 10 different digits for MNIST
         :param n_prototypes: p - Amount of prototypes
         :param n_slots_per_class: s - Amount of prototype slots each class gets
-        :param prototype_depth: d - Amount of channels in each prototype
+        :param prototype_depth: d - Amount of values in each prototype, should be the same as channel amount of
+            root convolution layers C
         """
         super().__init__()
 
@@ -75,7 +76,7 @@ class ProtoPoolMNIST(pl.LightningModule):
         self.prototype_shape = (n_prototypes, prototype_depth, 1, 1)  # [p, d, 1, 1]
 
         # --- Setup convolution layers f: ---
-        self.conv_root = SimpleConvNetRoot()  # outputs 64 x 3 x 3
+        self.conv_root = SimpleConvNetRoot()  # outputs n_samples x 64 x 3 x 3 -> dim [n, C, h, w]
 
         # --- Setup prototypes layer g: ---
         self.proto_presence = torch.nn.Parameter(  # called "q" in [1]
@@ -92,9 +93,30 @@ class ProtoPoolMNIST(pl.LightningModule):
         )
 
     def forward(self, x: torch.Tensor):
+        z = self.conv_root(x)  # [n, C, h, w]
+
         tau = gumbel_cooling_schedule(self.current_epoch)
-        proto_presence = modified_gumbel_softmax(self.proto_presence, tau=tau)
+        proto_presence = modified_gumbel_softmax(self.proto_presence, tau=tau)  # [c, p, s]
+
+        distances = self._prototype_distances(z)  # [n, p, h, w]
         pass
+
+    def _prototype_distances(self, z: torch.Tensor) -> torch.Tensor:
+        """
+        Calculate distance between the latent image representation `z`
+        and the learned prototypes p, normalized to the prototype depth d,
+        which should be equal to the amount of channels C.
+        In brief:
+
+            return |z-p|**2 / d
+
+        :param z: [n: n_samples, C: Channels, h: height, w: width] - Latent image representation
+        :return: [n: n_samples, p: n_prototypes, h: height, w: width] - (Normalized) distances to prototypes
+        """
+        # prototype shape: [p, d, 1, 1]
+        z_minus_p = z[:, np.newaxis, ...] - self.prototypes[np.newaxis, ...]  # [n, p, C, h, w]
+        return torch.abs(torch.sum(z_minus_p, dim=2)) ** 2 / self.prototypes.shape[1]  # [n, p, h, w]
+
 
 
     def configure_optimizers(self):
