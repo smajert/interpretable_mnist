@@ -12,12 +12,12 @@ def test_starting_connections_in_output_layer():
     n_classes = 3
     n_slots = 2
     expected_weights = torch.Tensor([
-        [1, -0.5, -0.5],
-        [1, -0.5, -0.5],
-        [-0.5, 1, -0.5],
-        [-0.5, 1, -0.5],
-        [-0.5, -0.5, 1],
-        [-0.5, -0.5, 1]
+        [1., 0., 0.],
+        [1., 0., 0.],
+        [0., 1., 0.],
+        [0., 1., 0.],
+        [0., 0., 1.],
+        [0., 0., 1.]
     ])
     starting_weights = proto_pool._get_starting_output_layer_class_connections(n_classes, n_slots)
 
@@ -48,7 +48,7 @@ def test_prototypes_are_differentiated_when_calling_distance():
 
     n, C, h, w = 20, 64, 3, 3
     z = torch.rand(n, C, h, w)
-    distances = model._prototype_distances(z)
+    distances = model._get_prototype_distances(z)
     sum_distances = torch.sum(distances)
     sum_distances.backward()
     assert model.prototypes.grad is not None
@@ -97,11 +97,14 @@ def test_distance_implementation_equal_to_protopool(prototypes):
     n, C, h, w = 20, PROTOTYPES_SHAPE[1], 3, 3
     z = torch.ones(size=(n, C, h, w))
 
-    distance = model._prototype_distances(z)
+    distance = model._get_prototype_distances(z)
     distance_protopool = proto_pool_distance_implementation(z, prototypes, model.prototype_shape)
     torch.testing.assert_allclose(distance, distance_protopool, rtol=0, atol=1e-3)
 
 
-
-
-
+def test_proto_pool_model_runs():
+    c, p, s, d = 3, 10, 2, 64
+    model = proto_pool.ProtoPoolMNIST(n_classes=c, n_prototypes=p, n_slots_per_class=s, prototype_depth=d)
+    dummy_input = torch.tensor(np.random.uniform(low=0, high=1, size=(10, 1, 28, 28)).astype(np.float32))
+    class_pred, _, _ = model(dummy_input)
+    assert class_pred[0].shape[0] == 3

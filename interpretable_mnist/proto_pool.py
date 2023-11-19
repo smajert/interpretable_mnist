@@ -17,8 +17,9 @@ def _get_starting_output_layer_class_connections(n_classes: int, n_slots_per_cla
     :return: [c * s, c] - Weights for properly connected linear layer
     """
 
-    # slots not belonging to class start with -0.5 as per [2]
-    starting_weights = torch.full((n_classes * n_slots_per_class, n_classes), fill_value=-0.5)
+    # slots not belonging to class are not set to -0.5 as per [2] because similarities to
+    # prototypes of other classes should not count as evidence against the class if prototypes are shared
+    starting_weights = torch.full((n_classes * n_slots_per_class, n_classes), fill_value=0.)
 
     for i in range(n_slots_per_class * n_classes):
         # connect first `n_slots_per_class` with the class "0", second `n_slots_per_class` with class "1", etc.
@@ -59,6 +60,28 @@ def gumbel_cooling_schedule(i_epoch: int) -> float:
     return 1 / inv_tau
 
 
+def prototype_distances_to_similarities(distances: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Convert prototype distances to similarities according to [1], i.e.
+    calculating similarity from distance dist via
+        sim = log( (dist + 1) / (epsilon +1) )
+    with epsilon = 1e-4 and get the global similarity of the
+    prototype by subtracting the maximal similarity across the (latent) image
+    from the average similarity across the latent image.
+
+    :param distances: [n: n_samples, p: n_prototypes, h: height, w: width] Prototype distances across (latent) image
+    :return: [n: n_samples, p: n_prototypes] Similarity score of each prototype to the (latent) image,
+        [n: n_samples, p: n_prototypes] Minimum distances for each prototype
+    """
+    min_distances = torch.min(torch.min(distances, dim=-1)[0], dim=-1)[0]  # [n, p]
+    avg_distances = torch.mean(distances, dim=(-2, -1))  # [n, p]
+
+    epsilon = 1e-4
+    max_similarities = torch.log((min_distances + 1) / (min_distances + epsilon))  # [n, p]
+    avg_similarities = torch.log((avg_distances + 1) / (avg_distances + epsilon))  # [n, p]
+    return max_similarities - avg_similarities, min_distances
+
+
 class ProtoPoolMNIST(pl.LightningModule):
     def __init__(self, n_classes: int, n_prototypes: int, n_slots_per_class: int, prototype_depth: int = 64) -> None:
         """
@@ -91,6 +114,7 @@ class ProtoPoolMNIST(pl.LightningModule):
         self.output_layer.weight.data.copy_(  # need to transpose to correctly fit into weights of layer
             torch.t(_get_starting_output_layer_class_connections(n_classes, n_slots_per_class))
         )
+        # note: softmax already in loss function
 
     def forward(self, x: torch.Tensor):
         z = self.conv_root(x)  # [n, C, h, w]
@@ -98,10 +122,15 @@ class ProtoPoolMNIST(pl.LightningModule):
         tau = gumbel_cooling_schedule(self.current_epoch)
         proto_presence = modified_gumbel_softmax(self.proto_presence, tau=tau)  # [c, p, s]
 
-        distances = self._prototype_distances(z)  # [n, p, h, w]
-        pass
+        prototype_distances = self._get_prototype_distances(z)  # [n, p, h, w]
+        prototype_similarities, min_distances = prototype_distances_to_similarities(prototype_distances)  # [n, p]
+        class_slot_similarities = torch.einsum("np,cps->ncs", prototype_similarities, proto_presence)  # [n, c, s]
+        class_slot_similarities = torch.flatten(class_slot_similarities, start_dim=1)  # [n, c*s]
 
-    def _prototype_distances(self, z: torch.Tensor) -> torch.Tensor:
+        x = self.output_layer(class_slot_similarities)
+        return x, min_distances, proto_presence
+
+    def _get_prototype_distances(self, z: torch.Tensor) -> torch.Tensor:
         """
         Calculate distance between the latent image representation `z`
         and the learned prototypes p, normalized to the prototype depth d,
@@ -116,6 +145,8 @@ class ProtoPoolMNIST(pl.LightningModule):
         # prototype shape: [p, d, 1, 1]
         z_minus_p = z[:, np.newaxis, ...] - self.prototypes[np.newaxis, ...]  # [n, p, C, h, w]
         return torch.abs(torch.sum(z_minus_p, dim=2)) ** 2 / self.prototypes.shape[1]  # [n, p, h, w]
+
+
 
 
 

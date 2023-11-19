@@ -15,6 +15,7 @@ class ConvNetMNIST(pl.LightningModule):
             torch.nn.Linear(576, 50),  # 50
             torch.nn.ReLU(),
             torch.nn.Linear(50, 10),   # 10
+            # note: softmax already in loss
         )
 
     def configure_optimizers(self):
