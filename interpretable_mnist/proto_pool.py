@@ -114,6 +114,7 @@ def _get_distance_loss(
 
     return torch.mean(min_distance_to_associated_prototypes)
 
+
 class ProtoPoolMNIST(pl.LightningModule):
     def __init__(
         self,
@@ -137,7 +138,7 @@ class ProtoPoolMNIST(pl.LightningModule):
 
         # --- Setup prototypes layer g: ---
         self.proto_presence = torch.nn.Parameter(  # called "q" in [1]
-            torch.zeros(self.n_classes, self.n_prototypes, self.n_slots)
+            torch.zeros(self.n_classes, self.n_prototypes, self.n_slots),
         )  # [c, p, s]
         torch.nn.init.xavier_normal_(self.proto_presence, gain=1.0)
         self.prototypes = torch.nn.Parameter(torch.rand(self.prototype_shape))  # [p, d, 1, 1]
@@ -158,7 +159,7 @@ class ProtoPoolMNIST(pl.LightningModule):
 
         prototype_distances = self._get_prototype_distances(z)  # [b, p, h, w]
         prototype_similarities, min_distances = prototype_distances_to_similarities(prototype_distances)  # [b, p]
-        class_slot_similarities = torch.einsum("np,cps->ncs", prototype_similarities, proto_presence)  # [b, c, s]
+        class_slot_similarities = torch.einsum("bp,cps->bcs", prototype_similarities, proto_presence)  # [b, c, s]
         class_slot_similarities = torch.flatten(class_slot_similarities, start_dim=1)  # [b, c*s]
 
         x = self.output_layer(class_slot_similarities)  # [b, c]
@@ -178,29 +179,29 @@ class ProtoPoolMNIST(pl.LightningModule):
         """
         # prototype shape: [p, d, 1, 1]
         z_minus_p = z[:, np.newaxis, ...] - self.prototypes[np.newaxis, ...]  # [b, p, C, h, w]
-        return torch.abs(torch.sum(z_minus_p, dim=2)) ** 2 / self.prototypes.shape[1]  # [b, p, h, w]
+        return torch.sum(z_minus_p, dim=2) ** 2 / self.prototypes.shape[1]  # [b, p, h, w]
 
     def training_step(self, batch: list[torch.Tensor], batch_idx: int) -> torch.Tensor:
         x, y = batch
-        y_one_hot = torch.nn.functional.one_hot(y, num_classes=10).float()
+        y_one_hot = torch.nn.functional.one_hot(y, num_classes=self.n_classes).float()
         y_pred, min_distances, proto_presence = self.forward(x)
 
         entropy_loss = torch.nn.CrossEntropyLoss()(y_pred, y_one_hot)
-        cluster_loss = _get_distance_loss(y, min_distances, proto_presence, self.n_slots)
-        inverted_proto_presence = 1 - proto_presence
-        separation_loss = _get_distance_loss(
-            y, min_distances, inverted_proto_presence, self.n_prototypes - self.n_slots
-        )
+        # cluster_loss = _get_distance_loss(y, min_distances, proto_presence, self.n_slots)
+        # inverted_proto_presence = 1 - proto_presence
+        # separation_loss = _get_distance_loss(
+        #     y, min_distances, inverted_proto_presence, self.n_prototypes - self.n_slots
+        # )
 
         loss = (
                 entropy_loss
-                + self.config.cluster_loss_weight * cluster_loss
-                + self.config.separation_loss_weight * separation_loss
+                #+ self.config.cluster_loss_weight * cluster_loss
+                #+ self.config.separation_loss_weight * separation_loss
         )
 
         self.log(f"loss", loss, prog_bar=True, on_step=True, on_epoch=True)
 
-        acc_calculator = Accuracy(task="multiclass", num_classes=10).to(self.device)
+        acc_calculator = Accuracy(task="multiclass", num_classes=self.n_classes).to(self.device)
         accuracy = acc_calculator(y_pred, y)
         self.log(f"acc", accuracy, prog_bar=True, on_step=True, on_epoch=True)
 

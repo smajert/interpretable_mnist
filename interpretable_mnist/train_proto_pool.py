@@ -21,7 +21,6 @@ if __name__ == "__main__":
     trainer.fit(
         model=ProtoPoolMNIST(params.Training()),
         train_dataloaders=mnist_train,
-        val_dataloaders=mnist_valid
     )
 
     # mnist_test = load_mnist(load_training_data=False)

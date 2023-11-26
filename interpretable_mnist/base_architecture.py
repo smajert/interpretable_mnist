@@ -13,17 +13,22 @@ class SimpleConvNetRoot(torch.nn.Module):
         # fmt: off
         self.layers = torch.nn.ModuleList([                    # input: 1 x 28 x 28
             torch.nn.Conv2d(1, 32, 3, padding="same"),         # 32 x 28 x 28
+            torch.nn.LazyBatchNorm2d(),
             self.activation,
             torch.nn.MaxPool2d(2),                             # 32 x 14 x 14
             torch.nn.Conv2d(32, 128, 3, padding="same"),       # 128 x 14 x 14
+            torch.nn.LazyBatchNorm2d(),
             self.activation,
             torch.nn.MaxPool2d(2),                             # 128 x 7 x 7
             torch.nn.Conv2d(128, 256, 3, padding="same"),      # 256 x 7 x 7
+            torch.nn.LazyBatchNorm2d(),
             self.activation,
             torch.nn.MaxPool2d(2),                             # 256 x 3 x 3
             torch.nn.Conv2d(256, 128, 3, padding="same"),      # 128 x 3 x 3
+            torch.nn.LazyBatchNorm2d(),
             self.activation,
             torch.nn.Conv2d(128, 64, 3, padding="same"),       # 64 x 3 x 3
+            torch.nn.LazyBatchNorm2d(),
             self.activation,
         ])
         # fmt: on

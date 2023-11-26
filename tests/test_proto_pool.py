@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 import torch
 
+from interpretable_mnist import params
 from interpretable_mnist import proto_pool
 
 
@@ -42,8 +43,9 @@ def test_visualize_cooling_schedule():
 
 
 def test_prototypes_are_differentiated_when_calling_distance():
-    c, p, s, d = 3, 10, 2, 64
-    model = proto_pool.ProtoPoolMNIST(n_classes=c, n_prototypes=p, n_slots_per_class=s, prototype_depth=d)
+    train_config = params.Training()
+    train_config.n_classes, train_config.n_prototypes, train_config.n_slots_per_class = 3, 10, 2
+    model = proto_pool.ProtoPoolMNIST(train_config, prototype_depth=64)
     assert model.prototypes.grad is None
 
     n, C, h, w = 20, 64, 3, 3
@@ -90,8 +92,9 @@ PROTOTYPES_SHAPE = (10, 64, 1, 1)  # p, d, 1, 1
     ]
 )
 def test_distance_implementation_equal_to_protopool(prototypes):
-    c, p, s, d = 3, PROTOTYPES_SHAPE[0], 2, PROTOTYPES_SHAPE[1]
-    model = proto_pool.ProtoPoolMNIST(n_classes=c, n_prototypes=p, n_slots_per_class=s, prototype_depth=d)
+    train_config = params.Training()
+    train_config.n_classes, train_config.n_prototypes, train_config.n_slots_per_class = 3, PROTOTYPES_SHAPE[0], 2
+    model = proto_pool.ProtoPoolMNIST(train_config, prototype_depth=PROTOTYPES_SHAPE[1])
     model.prototypes = torch.nn.Parameter(prototypes)
 
     n, C, h, w = 20, PROTOTYPES_SHAPE[1], 3, 3
@@ -103,8 +106,9 @@ def test_distance_implementation_equal_to_protopool(prototypes):
 
 
 def test_proto_pool_model_runs():
-    c, p, s, d = 3, 10, 2, 64
-    model = proto_pool.ProtoPoolMNIST(n_classes=c, n_prototypes=p, n_slots_per_class=s, prototype_depth=d)
+    train_config = params.Training()
+    train_config.n_classes, train_config.n_prototypes, train_config.n_slots_per_class = 3, 10, 2
+    model = proto_pool.ProtoPoolMNIST(train_config, prototype_depth=64)
     dummy_input = torch.tensor(np.random.uniform(low=0, high=1, size=(10, 1, 28, 28)).astype(np.float32))
     class_pred, _, _ = model(dummy_input)
     assert class_pred[0].shape[0] == 3
