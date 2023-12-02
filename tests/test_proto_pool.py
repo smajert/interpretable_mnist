@@ -56,7 +56,7 @@ def test_prototypes_are_differentiated_when_calling_distance():
     assert model.prototypes.grad is not None
 
 
-def proto_pool_distance_implementation(x, prototype_vectors, prototype_shape):
+def original_proto_pool_distance_implementation(x, prototype_vectors, prototype_shape):
     # copied from [1]
     ones = torch.nn.Parameter(torch.ones(prototype_shape), requires_grad=False)
     '''
@@ -101,8 +101,8 @@ def test_distance_implementation_equal_to_protopool(prototypes):
     z = torch.ones(size=(n, C, h, w))
 
     distance = model._get_prototype_distances(z)
-    distance_protopool = proto_pool_distance_implementation(z, prototypes, model.prototype_shape)
-    torch.testing.assert_allclose(distance, distance_protopool, rtol=0, atol=1e-3)
+    distance_original = original_proto_pool_distance_implementation(z, prototypes, model.prototype_shape)
+    torch.testing.assert_allclose(distance, distance_original, rtol=0, atol=1e-3)
 
 
 def test_proto_pool_model_runs():
@@ -112,3 +112,64 @@ def test_proto_pool_model_runs():
     dummy_input = torch.tensor(np.random.uniform(low=0, high=1, size=(10, 1, 28, 28)).astype(np.float32))
     class_pred, _, _ = model(dummy_input)
     assert class_pred[0].shape[0] == 3
+
+
+def original_proto_pool_dist_loss_implementation(prototype_shape, min_distances, proto_presence, top_k):
+    # copied from [1]
+    #         model, [b, p],        [b, p, n],      [scalar]
+    max_dist = (prototype_shape[1] * prototype_shape[2] * prototype_shape[3])
+    basic_proto = proto_presence.sum(dim=-1).detach()  # [b, p]
+    _, idx = torch.topk(basic_proto, top_k, dim=1)  # [b, n]
+    binarized_top_k = torch.zeros_like(basic_proto)
+    binarized_top_k.scatter_(1, src=torch.ones_like(
+        basic_proto), index=idx)  # [b, p]
+    inverted_distances, _ = torch.max(
+        (max_dist - min_distances) * binarized_top_k, dim=1)  # [b]
+    cost = torch.mean(max_dist - inverted_distances)
+    return cost
+
+
+def test_dist_loss_implementation_equal_to_protopool():
+    n_slots = 2
+    n_prototypes = 3
+    prototype_depth = 64
+    prototype_shape = (n_prototypes, prototype_depth, 1, 1)
+    prototype_size = np.prod(prototype_shape)
+
+    labels = torch.tensor([0, 1, 0])  # n_batch = 3
+    min_dist = torch.tensor([  # n_batch = 3 x n_prototypes = 3
+        [0.2, 0.5, 0.7],
+        [0.1, 0.2, 10],
+        [0.3, 0.4, 0.5],
+    ])
+    proto_presence = torch.tensor([  # n_classes = 2 x n_prototypes = 3 x n_slots = 2
+        [
+            [0, 0], [1, 0], [0, 1]  # prototype 2 and 3 are in slot 1 and 2 of class 1
+        ], [
+            [1, 0], [0, 1], [0, 0]  # prototype 1 and 2 are in slot 1 and 2 of class 2
+        ]
+    ])
+
+    # distance loss for cluster loss:
+    expected_cluster_loss = torch.mean(torch.tensor([0.5, 0.1, 0.4]))
+    cluster_loss = proto_pool._get_distance_loss(
+        labels, min_dist, proto_presence, n_slots_pick=n_slots, prototype_size=prototype_size
+    )
+    cluster_loss_original = original_proto_pool_dist_loss_implementation(
+        prototype_shape, min_dist, proto_presence[labels], n_slots
+    )
+    assert math.isclose(cluster_loss, cluster_loss_original, rel_tol=0, abs_tol=1e-10)
+    assert math.isclose(cluster_loss, expected_cluster_loss, rel_tol=0, abs_tol=1e-10)
+
+    # distance loss for separation loss:
+    expected_separation_loss = torch.mean(torch.tensor([0.2, 10, 0.3]))
+    inverted_proto_presence = 1 - proto_presence
+    separation_loss = proto_pool._get_distance_loss(
+        labels, min_dist, inverted_proto_presence, n_slots_pick=n_prototypes - n_slots, prototype_size=prototype_size
+    )
+    separation_loss_original = original_proto_pool_dist_loss_implementation(
+        prototype_shape, min_dist, inverted_proto_presence[labels], n_prototypes - n_slots
+    )
+    assert math.isclose(separation_loss, separation_loss_original, rel_tol=0, abs_tol=1e-10)
+    assert math.isclose(separation_loss, expected_separation_loss, rel_tol=0, abs_tol=1e-10)
+

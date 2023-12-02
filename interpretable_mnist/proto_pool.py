@@ -89,11 +89,10 @@ def _get_distance_loss(
     min_distances: torch.Tensor,
     proto_presence: torch.Tensor,
     n_slots_pick: int,
+    prototype_size: int,
 ) -> torch.Tensor:
     """
     Taken from [1], labels must **not** be one-hot encoded but encoded as increasing ints (i.e. 0, 1, 2, 1, 2, ...)
-
-    todo: subtraction from max possible distance in [1, 2], check if this is necessary
 
     :param labels: [b] -
     :param min_distances: [b, p]
@@ -110,7 +109,10 @@ def _get_distance_loss(
     binarized_prototype_for_sample = torch.zeros_like(prototypes_for_sample)  # [b, p]; 1 where proto associated else 0
     binarized_prototype_for_sample.scatter_(dim=1, src=torch.ones_like(prototypes_for_sample), index=idx)  # [b, p]
 
-    min_distance_to_associated_prototypes = torch.min(min_distances * binarized_prototype_for_sample)  # [b]
+    large_number = (1 - binarized_prototype_for_sample) * torch.tensor(2 * prototype_size, requires_grad=False)
+    min_distance_to_associated_prototypes = torch.min(
+        (min_distances * binarized_prototype_for_sample) + large_number, dim=-1
+    )[0]  # [b]
 
     return torch.mean(min_distance_to_associated_prototypes)
 
@@ -187,16 +189,19 @@ class ProtoPoolMNIST(pl.LightningModule):
         y_pred, min_distances, proto_presence = self.forward(x)
 
         entropy_loss = torch.nn.CrossEntropyLoss()(y_pred, y_one_hot)
-        # cluster_loss = _get_distance_loss(y, min_distances, proto_presence, self.n_slots)
-        # inverted_proto_presence = 1 - proto_presence
-        # separation_loss = _get_distance_loss(
-        #     y, min_distances, inverted_proto_presence, self.n_prototypes - self.n_slots
-        # )
+
+        prototype_size = np.prod(self.prototype_shape)
+        cluster_loss = _get_distance_loss(y, min_distances, proto_presence, self.n_slots, prototype_size)
+
+        inverted_proto_presence = 1 - proto_presence
+        separation_loss = _get_distance_loss(
+            y, min_distances, inverted_proto_presence, self.n_prototypes - self.n_slots, prototype_size
+        )
 
         loss = (
                 entropy_loss
-                #+ self.config.cluster_loss_weight * cluster_loss
-                #+ self.config.separation_loss_weight * separation_loss
+                + self.config.cluster_loss_weight * cluster_loss
+                + self.config.separation_loss_weight * separation_loss
         )
 
         self.log(f"loss", loss, prog_bar=True, on_step=True, on_epoch=True)
