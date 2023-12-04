@@ -109,12 +109,33 @@ def _get_distance_loss(
     binarized_prototype_for_sample = torch.zeros_like(prototypes_for_sample)  # [b, p]; 1 where proto associated else 0
     binarized_prototype_for_sample.scatter_(dim=1, src=torch.ones_like(prototypes_for_sample), index=idx)  # [b, p]
 
+    # We need to add some large, arbitrary number here to all non-associated prototypes so that
+    # the zeros for the non-associated prototypes will not be the minimum distance.
     large_number = (1 - binarized_prototype_for_sample) * torch.tensor(2 * prototype_size, requires_grad=False)
     min_distance_to_associated_prototypes = torch.min(
         (min_distances * binarized_prototype_for_sample) + large_number, dim=-1
     )[0]  # [b]
 
     return torch.mean(min_distance_to_associated_prototypes)
+
+
+def _get_slot_orthogonality_loss(proto_presence: torch.Tensor) -> torch.Tensor:
+    """
+
+    :param proto_presence: [c, p, s]
+    :return: [scalar]
+    """
+    n_classes = proto_presence.shape[0]
+    n_slots = proto_presence.shape[-1]
+    slot_similarities = torch.nn.functional.cosine_similarity(
+        proto_presence.unsqueeze(2), proto_presence.unsqueeze(-1), dim=1
+    )
+    upper_diagonal_idxs = np.triu_indices(n_slots)
+    slot_similarities[:, upper_diagonal_idxs[0], upper_diagonal_idxs[1]] = 0
+    # todo: cosine similarity is between -1 and 1 -> Unclear whether we should aim for
+    #   it being zero (i.e. sum absolute of slot_similarities) or -1 (i.e. avg_slot_similarities - 1)
+    return torch.abs(slot_similarities).sum() / (n_slots * n_classes)
+    # return slot_similarities.sum() / (n_slots * n_classes) - 1
 
 
 class ProtoPoolMNIST(pl.LightningModule):
@@ -158,6 +179,9 @@ class ProtoPoolMNIST(pl.LightningModule):
 
         tau = gumbel_cooling_schedule(self.current_epoch)
         proto_presence = modified_gumbel_softmax(self.proto_presence, tau=tau)  # [c, p, s]
+        # todo: during prototype projection, the gumbel_softmax should probably be replaced with something
+        #       deterministic to get 100% certain prototype assignments (and not have extremly low probability
+        #       of different prototype being assigned)
 
         prototype_distances = self._get_prototype_distances(z)  # [b, p, h, w]
         prototype_similarities, min_distances = prototype_distances_to_similarities(prototype_distances)  # [b, p]
@@ -198,13 +222,20 @@ class ProtoPoolMNIST(pl.LightningModule):
             y, min_distances, inverted_proto_presence, self.n_prototypes - self.n_slots, prototype_size
         )
 
+        slot_orthogonality_loss = _get_slot_orthogonality_loss(self.proto_presence)
+
         loss = (
                 entropy_loss
                 + self.config.cluster_loss_weight * cluster_loss
                 + self.config.separation_loss_weight * separation_loss
+                + slot_orthogonality_loss
         )
 
         self.log(f"loss", loss, prog_bar=True, on_step=True, on_epoch=True)
+        self.log(f"cluster_loss", cluster_loss, prog_bar=True, on_step=True, on_epoch=True)
+        self.log(f"separation_loss", separation_loss, prog_bar=True, on_step=True, on_epoch=True)
+        self.log(f"orthogonality_loss", slot_orthogonality_loss, prog_bar=True, on_step=True, on_epoch=True)
+        self.log(f"minimum_proto_presence", torch.min(self.proto_presence), prog_bar=True, on_step=True, on_epoch=True)
 
         acc_calculator = Accuracy(task="multiclass", num_classes=self.n_classes).to(self.device)
         accuracy = acc_calculator(y_pred, y)

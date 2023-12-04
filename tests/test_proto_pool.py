@@ -173,3 +173,23 @@ def test_dist_loss_implementation_equal_to_protopool():
     assert math.isclose(separation_loss, separation_loss_original, rel_tol=0, abs_tol=1e-10)
     assert math.isclose(separation_loss, expected_separation_loss, rel_tol=0, abs_tol=1e-10)
 
+
+def original_proto_pool_orthogonality_loss(proto_presence):
+    # copied from [1]
+    orthogonal_loss_p = torch.nn.functional.cosine_similarity(
+        proto_presence.unsqueeze(2), proto_presence.unsqueeze(-1), dim=1
+    ).sum() / (3 * 10) - 1
+
+    return orthogonal_loss_p
+
+
+def test_orthogonality_loss_runs():
+    proto_presence = torch.rand(size=(10, 30, 3))
+
+    orthogonal_loss = proto_pool._get_slot_orthogonality_loss(proto_presence)
+    # orthongonal_loss_original = original_proto_pool_orthogonality_loss(proto_presence)
+    
+    assert orthogonal_loss >= -1
+    assert orthogonal_loss <= 1
+
+
