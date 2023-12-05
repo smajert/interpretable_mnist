@@ -11,6 +11,7 @@ class Training:
     cluster_loss_weight: float = 0.8
     learning_rate: float = 1e-3
     n_classes: int = 10
+    n_cooling_epochs: int = 10
     n_data_loader_workers: int = 4
     n_epochs: int = 100
     n_prototypes: int = 30

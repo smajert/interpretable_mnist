@@ -27,7 +27,8 @@ def test_starting_connections_in_output_layer():
 
 def test_visualize_cooling_schedule():
     i_epochs = list(range(50))
-    tau_schedule = [proto_pool.gumbel_cooling_schedule(i_epoch) for i_epoch in i_epochs]
+    n_cooling_epochs = 30
+    tau_schedule = [proto_pool.gumbel_cooling_schedule(i_epoch, n_cooling_epochs) for i_epoch in i_epochs]
 
     assert math.isclose(tau_schedule[15], 0.00141161833364, rel_tol=0, abs_tol=1e-11)
 

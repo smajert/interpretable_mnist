@@ -42,16 +42,16 @@ def modified_gumbel_softmax(proto_presence: torch.Tensor, tau: float) -> torch.T
     return torch.nn.functional.gumbel_softmax(proto_presence / tau, tau=1, dim=1)
 
 
-def gumbel_cooling_schedule(i_epoch: int) -> float:
+def gumbel_cooling_schedule(i_epoch: int, n_cooling_epochs: int) -> float:
     """
     Get tau for the `i_epoch` epoch.
 
     :param i_epoch: Epoch to get the appropriate tau value for the modified gumbel softmax
+    :param n_cooling_epochs: Number of epochs until tau stops decreasing
     :return: tau at epoch `i_epoch`
     """
     start_inv_tau = 1.3
     end_inv_tau = 10 ** 3
-    n_cooling_epochs = 30
 
     # alpha from [1]: alpha = (end_inv_tau / start_inv_tau) ** 2 / epoch_interval
     inv_tau = (
@@ -153,7 +153,9 @@ class ProtoPoolMNIST(pl.LightningModule):
         self.n_classes = train_info.n_classes  # c - Amount of different classes to predict; 10 for MNIST
         self.n_prototypes = train_info.n_prototypes  # p - Amount of prototypes
         self.n_slots = train_info.n_slots_per_class  # s - Amount of prototype slots each class gets
-        self.config = train_info
+        self.n_cooling_epochs = train_info.n_cooling_epochs
+        self.cluster_loss_weight = train_info.cluster_loss_weight
+        self.separation_loss_weight = train_info.separation_loss_weight
         self.prototype_shape = (self.n_prototypes, prototype_depth, 1, 1)  # [p, d, 1, 1]
 
         # --- Setup convolution layers f: ---
@@ -177,7 +179,7 @@ class ProtoPoolMNIST(pl.LightningModule):
     def forward(self, x: torch.Tensor):
         z = self.conv_root(x)  # [b, C, h, w]
 
-        tau = gumbel_cooling_schedule(self.current_epoch)
+        tau = gumbel_cooling_schedule(self.current_epoch, self.n_cooling_epochs)
         proto_presence = modified_gumbel_softmax(self.proto_presence, tau=tau)  # [c, p, s]
         # todo: during prototype projection, the gumbel_softmax should probably be replaced with something
         #       deterministic to get 100% certain prototype assignments (and not have extremly low probability
@@ -226,9 +228,10 @@ class ProtoPoolMNIST(pl.LightningModule):
 
         loss = (
                 entropy_loss
-                + self.config.cluster_loss_weight * cluster_loss
-                + self.config.separation_loss_weight * separation_loss
+                + self.cluster_loss_weight * cluster_loss
+                + self.separation_loss_weight * separation_loss
                 + slot_orthogonality_loss
+                # todo: l1 loss of last layer
         )
 
         self.log(f"loss", loss, prog_bar=True, on_step=True, on_epoch=True)
