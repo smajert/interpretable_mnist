@@ -7,6 +7,7 @@ import torch
 
 from interpretable_mnist import params
 from interpretable_mnist import proto_pool
+from interpretable_mnist.data import load_mnist
 
 
 def test_starting_connections_in_output_layer():
@@ -49,8 +50,8 @@ def test_prototypes_are_differentiated_when_calling_distance():
     model = proto_pool.ProtoPoolMNIST(train_config, prototype_depth=64)
     assert model.prototypes.grad is None
 
-    n, C, h, w = 20, 64, 3, 3
-    z = torch.rand(n, C, h, w)
+    n, k, h, w = 20, 64, 3, 3
+    z = torch.rand(n, k, h, w)
     distances = model._get_prototype_distances(z)
     sum_distances = torch.sum(distances)
     sum_distances.backward()
@@ -98,8 +99,8 @@ def test_distance_implementation_equal_to_protopool(prototypes):
     model = proto_pool.ProtoPoolMNIST(train_config, prototype_depth=PROTOTYPES_SHAPE[1])
     model.prototypes = torch.nn.Parameter(prototypes)
 
-    n, C, h, w = 20, PROTOTYPES_SHAPE[1], 3, 3
-    z = torch.ones(size=(n, C, h, w))
+    n, k, h, w = 20, PROTOTYPES_SHAPE[1], 3, 3
+    z = torch.ones(size=(n, k, h, w))
 
     distance = model._get_prototype_distances(z)
     distance_original = original_proto_pool_distance_implementation(z, prototypes, model.prototype_shape)
@@ -194,3 +195,19 @@ def test_orthogonality_loss_runs():
     assert orthogonal_loss <= 1
 
 
+def test_prototype_projection():
+    train_config = params.Training()
+    train_config.n_classes, train_config.n_prototypes, train_config.n_slots_per_class = 3, 10, 2
+
+    model = proto_pool.ProtoPoolMNIST(train_config, prototype_depth=64)
+    mnist_batch = next(iter(load_mnist()))[0]
+    z = model.conv_root(mnist_batch)
+    prototype = z[0, :, 0, 0]
+
+    with torch.no_grad():
+        model.prototypes[0, ...] = prototype[:, np.newaxis, np.newaxis]
+    model.update_projected_prototypes(mnist_batch)
+    model.push_projected_prototypes()
+
+    torch.testing.assert_allclose(model.projected_prototypes[0].prototype, prototype, rtol=0, atol=1e-11)
+    torch.testing.assert_allclose(model.prototypes[0, :, 0, 0], prototype, rtol=0, atol=1e-11)

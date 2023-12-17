@@ -1,10 +1,11 @@
-from interpretable_mnist import params
-from interpretable_mnist.base_architecture import SimpleConvNetRoot
-
 import lightning.pytorch as pl
 import numpy as np
 import torch
 from torchmetrics import Accuracy
+
+from interpretable_mnist import params
+from interpretable_mnist.base_architecture import SimpleConvNetRoot
+from interpretable_mnist.core import ProjectedPrototype
 
 
 def _get_starting_output_layer_class_connections(n_classes: int, n_slots_per_class: int) -> torch.Tensor:
@@ -146,20 +147,22 @@ class ProtoPoolMNIST(pl.LightningModule):
     ) -> None:
         """
         :param prototype_depth: d - Amount of values in each prototype, should be the same as channel amount of
-            root convolution layers C
+            root convolution layers k
         """
         super().__init__()
 
+        self.learning_rate = train_info.learning_rate
         self.n_classes = train_info.n_classes  # c - Amount of different classes to predict; 10 for MNIST
         self.n_prototypes = train_info.n_prototypes  # p - Amount of prototypes
         self.n_slots = train_info.n_slots_per_class  # s - Amount of prototype slots each class gets
         self.n_cooling_epochs = train_info.n_cooling_epochs
+        self.projection_epoch = train_info.projection_epoch
         self.cluster_loss_weight = train_info.cluster_loss_weight
         self.separation_loss_weight = train_info.separation_loss_weight
         self.prototype_shape = (self.n_prototypes, prototype_depth, 1, 1)  # [p, d, 1, 1]
 
         # --- Setup convolution layers f: ---
-        self.conv_root = SimpleConvNetRoot()  # outputs n_samples_batch x 64 x 3 x 3 -> dim [b, C, h, w]
+        self.conv_root = SimpleConvNetRoot()  # outputs n_samples_batch x 64 x 3 x 3 -> dim [b, k, h, w]
 
         # --- Setup prototypes layer g: ---
         self.proto_presence = torch.nn.Parameter(  # called "q" in [1]
@@ -167,22 +170,23 @@ class ProtoPoolMNIST(pl.LightningModule):
         )  # [c, p, s]
         torch.nn.init.xavier_normal_(self.proto_presence, gain=1.0)
         self.prototypes = torch.nn.Parameter(torch.rand(self.prototype_shape))  # [p, d, 1, 1]
+        self.projected_prototypes = [None] * self.n_prototypes
 
         # --- Setup fully connected output layer h: ---
         self.output_layer = torch.nn.Linear(self.n_classes * self.n_slots, self.n_classes, bias=False)
-        self.output_layer.requires_grad_ = False
-        self.output_layer.weight.data.copy_(  # need to transpose to correctly fit into weights of layer
+        self.output_layer.weight = torch.nn.Parameter(  # need to transpose to correctly fit into weights of layer
             torch.t(_get_starting_output_layer_class_connections(self.n_classes, self.n_slots))
         )
         # note: softmax already in loss function
 
     def forward(self, x: torch.Tensor):
-        z = self.conv_root(x)  # [b, C, h, w]
+        z = self.conv_root(x)  # [b, k, h, w]
 
         tau = gumbel_cooling_schedule(self.current_epoch, self.n_cooling_epochs)
+
         proto_presence = modified_gumbel_softmax(self.proto_presence, tau=tau)  # [c, p, s]
         # todo: during prototype projection, the gumbel_softmax should probably be replaced with something
-        #       deterministic to get 100% certain prototype assignments (and not have extremly low probability
+        #       deterministic to get 100% certain prototype assignments (and not have extremely low probability
         #       of different prototype being assigned)
 
         prototype_distances = self._get_prototype_distances(z)  # [b, p, h, w]
@@ -206,13 +210,25 @@ class ProtoPoolMNIST(pl.LightningModule):
         :return: [b: n_samples_batch, p: n_prototypes, h: height, w: width] - (Normalized) distances to prototypes
         """
         # prototype shape: [p, d, 1, 1]
-        z_minus_p = z[:, np.newaxis, ...] - self.prototypes[np.newaxis, ...]  # [b, p, C, h, w]
+        z_minus_p = z[:, np.newaxis, ...] - self.prototypes[np.newaxis, ...]  # [b, p, k, h, w]
         return torch.sum(z_minus_p, dim=2) ** 2 / self.prototypes.shape[1]  # [b, p, h, w]
 
     def training_step(self, batch: list[torch.Tensor], batch_idx: int) -> torch.Tensor:
         x, y = batch
         y_one_hot = torch.nn.functional.one_hot(y, num_classes=self.n_classes).float()
         y_pred, min_distances, proto_presence = self.forward(x)
+
+        if self.current_epoch == self.projection_epoch:
+            if batch_idx == 0:  # only need to turn grad off once
+                self.conv_root.requires_grad_(False)
+                self.prototypes.requires_grad_(False)
+                self.proto_presence.requires_grad_(False)
+            self.update_projected_prototypes(x)
+        if (self.current_epoch == self.projection_epoch + 1) and (batch_idx == 0):
+            self.push_projected_prototypes()
+            self.output_layer.requires_grad_(True)
+
+        self.log(f"weight", self.conv_root.layers[0].weight[0, 0, 0, 0], prog_bar=True, on_step=True, on_epoch=True)
 
         entropy_loss = torch.nn.CrossEntropyLoss()(y_pred, y_one_hot)
 
@@ -230,25 +246,84 @@ class ProtoPoolMNIST(pl.LightningModule):
                 entropy_loss
                 + self.cluster_loss_weight * cluster_loss
                 + self.separation_loss_weight * separation_loss
-                + slot_orthogonality_loss
+                # + slot_orthogonality_loss
                 # todo: l1 loss of last layer
         )
 
         self.log(f"loss", loss, prog_bar=True, on_step=True, on_epoch=True)
-        self.log(f"cluster_loss", cluster_loss, prog_bar=True, on_step=True, on_epoch=True)
-        self.log(f"separation_loss", separation_loss, prog_bar=True, on_step=True, on_epoch=True)
-        self.log(f"orthogonality_loss", slot_orthogonality_loss, prog_bar=True, on_step=True, on_epoch=True)
-        self.log(f"minimum_proto_presence", torch.min(self.proto_presence), prog_bar=True, on_step=True, on_epoch=True)
+        # self.log(f"cluster_loss", cluster_loss, prog_bar=True, on_step=True, on_epoch=True)
+        # self.log(f"separation_loss", separation_loss, prog_bar=True, on_step=True, on_epoch=True)
+        # self.log(f"orthogonality_loss", slot_orthogonality_loss, prog_bar=True, on_step=True, on_epoch=True)
+        # self.log(f"minimum_proto_presence", torch.min(self.proto_presence), prog_bar=True, on_step=True, on_epoch=True)
 
         acc_calculator = Accuracy(task="multiclass", num_classes=self.n_classes).to(self.device)
         accuracy = acc_calculator(y_pred, y)
         self.log(f"acc", accuracy, prog_bar=True, on_step=True, on_epoch=True)
 
-        return loss
+        if self.current_epoch == self.projection_epoch:
+            return None  # this appears to skip the gradient update, though I am not sure if it is officially supported
+        elif self.current_epoch > self.projection_epoch:
+            return entropy_loss
+        else:
+            return loss
+
+    @torch.no_grad()
+    def update_projected_prototypes(
+            self,
+            batch_data: torch.Tensor,  # [b, K, H, W]
+    ) -> None:
+        z = self.conv_root(batch_data)  # [b, k, h, w]
+        distances_to_protos = torch.sum(torch.abs(
+            z[:, np.newaxis, ...]  # [b, 1, k, h, w]
+            - self.prototypes[np.newaxis, ...]  # [1, p, d, 1, 1]
+        ), dim=2)  # [b, p, h, w]
+
+        for p_idx in range(len(self.projected_prototypes)):
+            distances_to_prototype = distances_to_protos[:, p_idx, ...]  # [b, h, w]
+            batch_min_idx, height_min_idx, width_min_idx = np.unravel_index(
+                torch.argmin(distances_to_prototype).cpu(), distances_to_prototype.shape
+            )
+            best_match_prototype_from_batch = z[batch_min_idx, :, height_min_idx, width_min_idx]
+
+            dist_best_match_to_prototype = distances_to_prototype[batch_min_idx, height_min_idx, width_min_idx]
+
+            best_match_training_sample = batch_data[batch_min_idx, ...]
+
+            latent_to_input_height = batch_data.shape[2] / z.shape[2]  # = H/h
+            proto_start_height = np.rint(latent_to_input_height) * height_min_idx
+            proto_stop_height = proto_start_height + latent_to_input_height  # since latent height of prototype is 1
+            latent_to_input_width = batch_data.shape[3] / z.shape[3]  # = W/w
+            proto_start_width = np.rint(latent_to_input_width) * width_min_idx
+            proto_stop_width = proto_start_width + latent_to_input_width  # since latent width of prototype is 1
+            best_match_loc = (
+                slice(int(proto_start_height), int(proto_stop_height)),
+                slice(int(proto_start_width), int(proto_stop_width))
+            )
+
+            projected_proto = ProjectedPrototype(
+                best_match_prototype_from_batch,
+                dist_best_match_to_prototype,
+                best_match_training_sample,
+                best_match_loc,
+            )
+
+            if self.projected_prototypes[p_idx] is None:
+                self.projected_prototypes[p_idx] = projected_proto
+                continue
+
+            dist_best_match = projected_proto.distance_to_unprojected_prototype
+            dist_current = self.projected_prototypes[p_idx].distance_to_unprojected_prototype
+            if dist_best_match < dist_current:
+                self.projected_prototypes[p_idx] = projected_proto
+
+    @torch.no_grad()
+    def push_projected_prototypes(self):
+        self.prototypes.data = torch.stack(
+            [proj.prototype for proj in self.projected_prototypes], dim=0
+        ).to(self.prototypes.device)[..., np.newaxis, np.newaxis]
 
     def configure_optimizers(self):
-        # todo: This probably needs more optimizers
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.config.learning_rate)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
         return optimizer
 
 
