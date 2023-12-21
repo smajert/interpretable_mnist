@@ -13,8 +13,8 @@ class Training:
     n_classes: int = 10
     n_cooling_epochs: int = 10
     n_data_loader_workers: int = 4
-    n_epochs: int = 80
-    projection_epoch: int = 75
+    n_epochs: int = 90
+    projection_epochs: list[int] = [30, 40, 50, 60, 70, 80]
     n_prototypes: int = 30
     n_slots_per_class: int = 2
     separation_loss_weight: float = -0.08

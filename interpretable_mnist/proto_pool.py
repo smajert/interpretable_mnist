@@ -156,7 +156,8 @@ class ProtoPoolMNIST(pl.LightningModule):
         self.n_prototypes = train_info.n_prototypes  # p - Amount of prototypes
         self.n_slots = train_info.n_slots_per_class  # s - Amount of prototype slots each class gets
         self.n_cooling_epochs = train_info.n_cooling_epochs
-        self.projection_epoch = train_info.projection_epoch
+        self.projection_epochs = train_info.projection_epochs
+        self.freeze_epoch = train_info.projection_epochs[-1]
         self.cluster_loss_weight = train_info.cluster_loss_weight
         self.separation_loss_weight = train_info.separation_loss_weight
         self.prototype_shape = (self.n_prototypes, prototype_depth, 1, 1)  # [p, d, 1, 1]
@@ -177,6 +178,7 @@ class ProtoPoolMNIST(pl.LightningModule):
         self.output_layer.weight = torch.nn.Parameter(  # need to transpose to correctly fit into weights of layer
             torch.t(_get_starting_output_layer_class_connections(self.n_classes, self.n_slots))
         )
+        self.output_layer.requires_grad_(False)
         # note: softmax already in loss function
 
     def forward(self, x: torch.Tensor):
@@ -218,15 +220,18 @@ class ProtoPoolMNIST(pl.LightningModule):
         y_one_hot = torch.nn.functional.one_hot(y, num_classes=self.n_classes).float()
         y_pred, min_distances, proto_presence = self.forward(x)
 
-        if self.current_epoch == self.projection_epoch:
-            if batch_idx == 0:  # only need to turn grad off once
-                self.conv_root.requires_grad_(False)
-                self.prototypes.requires_grad_(False)
-                self.proto_presence.requires_grad_(False)
-            self.update_projected_prototypes(x)
-        if (self.current_epoch == self.projection_epoch + 1) and (batch_idx == 0):
-            self.push_projected_prototypes()
+        if (self.current_epoch == self.freeze_epoch) and (batch_idx == 0):
+            self.conv_root.requires_grad_(False)
+            self.prototypes.requires_grad_(False)
+            self.proto_presence.requires_grad_(False)
             self.output_layer.requires_grad_(True)
+
+        if self.current_epoch in self.projection_epochs:
+            self.update_projected_prototypes(x)
+            return None  # this appears to skip the gradient update, though I am not sure if it is officially supported
+
+        if (self.current_epoch - 1 in self.projection_epochs) and (batch_idx == 0):
+            self.push_projected_prototypes()
 
         self.log(f"weight", self.conv_root.layers[0].weight[0, 0, 0, 0], prog_bar=True, on_step=True, on_epoch=True)
 
@@ -260,9 +265,7 @@ class ProtoPoolMNIST(pl.LightningModule):
         accuracy = acc_calculator(y_pred, y)
         self.log(f"acc", accuracy, prog_bar=True, on_step=True, on_epoch=True)
 
-        if self.current_epoch == self.projection_epoch:
-            return None  # this appears to skip the gradient update, though I am not sure if it is officially supported
-        elif self.current_epoch > self.projection_epoch:
+        if self.current_epoch >= self.freeze_epoch:
             return entropy_loss
         else:
             return loss
