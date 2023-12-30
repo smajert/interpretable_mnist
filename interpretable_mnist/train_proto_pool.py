@@ -30,10 +30,16 @@ if __name__ == "__main__":
         train_dataloaders=mnist_train,
     )
 
-    plt.figure()
-    plt.pcolormesh(proto_model.output_layer.weight.detach().cpu().numpy())
-    plt.show()
-    plot_projected_prototype(proto_model.projected_prototypes[0])
+    for class_idx in range(10):
+        class_prototypes = proto_model.get_projected_prototypes_by_class(class_idx)
+        for class_prototype in class_prototypes:
+            plot_projected_prototype(class_prototype)
+
+
+    # plt.figure()
+    # plt.pcolormesh(proto_model.output_layer.weight.detach().cpu().numpy())
+    # plt.show()
+    # plot_projected_prototype(proto_model.projected_prototypes[0])
 
     # mnist_test = load_mnist(load_training_data=False)
     # trainer.test(

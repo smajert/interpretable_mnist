@@ -329,4 +329,13 @@ class ProtoPoolMNIST(pl.LightningModule):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
         return optimizer
 
+    @torch.no_grad()
+    def get_projected_prototypes_by_class(self, class_label: int) -> list[ProjectedPrototype]:
+        proto_presence_in_class_slots = self.proto_presence[class_label, ...]  # [p, s]
+        class_proj_prototypes = []
+        for slot_idx in range(proto_presence_in_class_slots.shape[1]):
+            proto_presence_in_slot = proto_presence_in_class_slots[:, slot_idx]
+            class_proj_prototypes.append(self.projected_prototypes[torch.argmax(proto_presence_in_slot)])
+
+        return class_proj_prototypes
 
