@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from interpretable_mnist import params
-from interpretable_mnist import proto_pool
+from interpretable_mnist import proto_pnet
 from interpretable_mnist.data import load_mnist
 
 

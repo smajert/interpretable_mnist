@@ -3,8 +3,8 @@ import lightning.pytorch as pl
 
 from interpretable_mnist import params
 from interpretable_mnist.data import load_mnist
-from interpretable_mnist.proto_pool import ProtoPoolMNIST
-from interpretable_mnist.proto_pool_plot_utils import plot_projected_prototype
+from interpretable_mnist.proto_pnet import ProtoPoolMNIST
+from interpretable_mnist.prototype_plot_utilities import plot_projected_prototype
 
 
 if __name__ == "__main__":
