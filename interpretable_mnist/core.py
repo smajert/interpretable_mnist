@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 
-import torch
+import numpy as np
 
 
 @dataclass
 class ProjectedPrototype:
-    prototype: torch.Tensor  # [k]
+    prototype: np.ndarray  # [k]
     distance_to_unprojected_prototype: float
-    training_sample: torch.Tensor  # [K, H, W ]
+    training_sample: np.ndarray  # [K, H, W ]
     prototype_location_in_training_sample: tuple[slice, slice]

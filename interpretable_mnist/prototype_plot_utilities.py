@@ -20,7 +20,7 @@ def plot_prototype_presence(proto_presence: torch.Tensor, class_idx: int, slot_i
 
 
 def plot_projected_prototype(proto: ProjectedPrototype) -> None:
-    img = proto.training_sample[0, ...].cpu().numpy()
+    img = proto.training_sample[0, ...]
     height_start = proto.prototype_location_in_training_sample[0].start
     height_stop = proto.prototype_location_in_training_sample[0].stop
     width_start = proto.prototype_location_in_training_sample[1].start

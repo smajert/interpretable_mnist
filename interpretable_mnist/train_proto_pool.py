@@ -3,7 +3,7 @@ import lightning.pytorch as pl
 
 from interpretable_mnist import params
 from interpretable_mnist.data import load_mnist
-from interpretable_mnist.proto_pnet import ProtoPoolMNIST
+from interpretable_mnist.proto_pnet import ProtoPNetMNIST
 from interpretable_mnist.prototype_plot_utilities import plot_projected_prototype
 
 
@@ -18,12 +18,8 @@ if __name__ == "__main__":
         max_epochs=params.Training.n_epochs,
         default_root_dir=params.OUTS_BASE_DIR,
     )
-    proto_model = ProtoPoolMNIST(params.Training())
+    proto_model = ProtoPNetMNIST(params.Training())
 
-    from matplotlib import pyplot as plt
-    plt.figure()
-    plt.pcolormesh(proto_model.output_layer.weight.detach().cpu().numpy())
-    plt.show()
 
     trainer.fit(
         model=proto_model,
@@ -31,7 +27,7 @@ if __name__ == "__main__":
     )
 
     for class_idx in range(10):
-        class_prototypes = proto_model.get_projected_prototypes_by_class(class_idx)
+        class_prototypes = proto_model.projected_prototypes[class_idx]
         for class_prototype in class_prototypes:
             plot_projected_prototype(class_prototype)
 
