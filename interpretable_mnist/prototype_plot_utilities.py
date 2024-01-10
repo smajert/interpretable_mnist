@@ -19,7 +19,7 @@ def plot_prototype_presence(proto_presence: torch.Tensor, class_idx: int, slot_i
     plt.show()
 
 
-def plot_projected_prototype(proto: ProjectedPrototype) -> None:
+def plot_projected_prototype(proto: ProjectedPrototype, title: str | None = None) -> None:
     img = proto.training_sample[0, ...]
     height_start = proto.prototype_location_in_training_sample[0].start
     height_stop = proto.prototype_location_in_training_sample[0].stop
@@ -28,6 +28,7 @@ def plot_projected_prototype(proto: ProjectedPrototype) -> None:
 
     plt.figure()
     plt.imshow(img)
+    plt.title(title)
 
     rectangle = patches.Rectangle(
         (width_start, height_start),

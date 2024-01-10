@@ -15,7 +15,7 @@ if __name__ == "__main__":
     trainer = pl.Trainer(
         accelerator="gpu",
         devices=1,
-        max_epochs=params.Training.n_epochs,
+        max_epochs=params.Training.projection_epochs[-1],
         default_root_dir=params.OUTS_BASE_DIR,
     )
     trainer.fit(

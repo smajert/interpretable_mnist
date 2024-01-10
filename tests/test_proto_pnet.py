@@ -10,20 +10,20 @@ from interpretable_mnist import proto_pnet
 from interpretable_mnist.data import load_mnist
 
 
-def test_starting_connections_in_output_layer():
-    n_classes = 3
-    n_slots = 2
-    expected_weights = torch.Tensor([
-        [1., 0., 0.],
-        [1., 0., 0.],
-        [0., 1., 0.],
-        [0., 1., 0.],
-        [0., 0., 1.],
-        [0., 0., 1.]
-    ])
-    starting_weights = proto_pnet._get_starting_output_layer_class_connections(n_classes, n_slots)
+def test_prototype_distances_to_similarities():
+    n_samples_batch = 20
+    n_classes = 10
+    n_protos_per_class = 3
+    height, width = 3, 3
 
-    torch.testing.assert_allclose(starting_weights, expected_weights, rtol=0, atol=1e-11)
+    distances = torch.ones(size=(n_samples_batch, n_classes, n_protos_per_class, height, width)) * 0.5
+    distances[0, 0, 0, 0, 0] = 0.
+    distances[1, 0, 0, 0, 0] = 0.2
+    similarities, min_distances = proto_pnet.prototype_distances_to_similarities(distances)
+
+    assert similarities[0, 0, 0] > similarities[1, 0, 0]
+    assert torch.isclose(min_distances[0, 0, 0], torch.tensor(0.0), rtol=0, atol=1e-11)
+    assert torch.isclose(min_distances[1, 0, 0], torch.tensor(0.2), rtol=0, atol=1e-11)
 
 
 def test_prototypes_are_differentiated_when_calling_distance():
@@ -40,58 +40,29 @@ def test_prototypes_are_differentiated_when_calling_distance():
     assert model.prototypes.grad is not None
 
 
-def original_proto_pool_distance_implementation(x, prototype_vectors, prototype_shape):
-    # copied from [1]
-    ones = torch.nn.Parameter(torch.ones(prototype_shape), requires_grad=False)
-    '''
-    apply self.prototype_vectors as l2-convolution filters on input x
-    '''
-    x2 = x ** 2
-    x2_patch_sum = torch.nn.functional.conv2d(input=x2, weight=ones)
-
-    p2 = prototype_vectors ** 2
-    p2 = torch.sum(p2, dim=(1, 2, 3))
-    # p2 is a vector of shape (num_prototypes,)
-    # then we reshape it to (num_prototypes, 1, 1)
-    p2_reshape = p2.view(-1, 1, 1)
-
-    xp = torch.nn.functional.conv2d(input=x, weight=prototype_vectors)
-    intermediate_result = - 2 * xp + p2_reshape  # use broadcast
-    # x2_patch_sum and intermediate_result are of the same shape
-    distances = torch.nn.functional.relu(x2_patch_sum + intermediate_result)
-
-    return distances
-
-
 PROTOTYPES_SHAPE = (10, 1, 64, 1, 1)  # c, p, d, 1, 1
 
 
 @pytest.mark.parametrize(
-    "prototypes", [
-        (torch.ones(size=PROTOTYPES_SHAPE)),  # expected result: 0
-        (0.5 * torch.ones(size=PROTOTYPES_SHAPE)),  # expected result: (d * (1-0.5))**2 / d
-        (np.pi * torch.ones(size=PROTOTYPES_SHAPE)),  # expected result: (d * (1-pi))**2 / d
-        # some deviations to [1] for random inputs, but simpler implementation here seems
-        # to work better for third example
+    "prototypes, expc_result", [
+        (torch.ones(size=PROTOTYPES_SHAPE), (1 - 1)),  # expected: sqrt(1 / d * d * (1-1)) ** 2 = 1-1
+        ((0.5 * torch.ones(size=PROTOTYPES_SHAPE)), (1 - 0.5)),  # expected: sqrt(1 / d * d * (1-0.5)**2) = 1-0.5
+        (np.pi * torch.ones(size=PROTOTYPES_SHAPE), (math.pi - 1)),  # expected: sqrt(1 / d * d * |1-pi|)**2  = pi-1
     ]
 )
-def test_distance_implementation_equal_to_protopool(prototypes):
+def test_distance_implementation_equal_to_protopool(prototypes, expc_result):
     train_config = params.Training()
     train_config.n_classes = PROTOTYPES_SHAPE[0]
     train_config.n_protos_per_class = PROTOTYPES_SHAPE[1]
-    model = proto_pnet.ProtoPNetMNIST(train_config, prototype_depth=PROTOTYPES_SHAPE[1])
+    train_config.minkowski_distance_order = 2
+    model = proto_pnet.ProtoPNetMNIST(train_config, prototype_depth=PROTOTYPES_SHAPE[2])
     model.prototypes = torch.nn.Parameter(prototypes)
 
     n, k, h, w = 20, PROTOTYPES_SHAPE[2], 3, 3
     z = torch.ones(size=(n, k, h, w))
 
     distance = model._get_prototype_distances(z)
-    pool_proto_shape = (PROTOTYPES_SHAPE[0] * PROTOTYPES_SHAPE[1], *PROTOTYPES_SHAPE[2:])
-    prototypes = torch.flatten(prototypes, start_dim=0, end_dim=1)
-    distance_original = original_proto_pool_distance_implementation(z, prototypes, pool_proto_shape)
-
-    distance = torch.flatten(distance, start_dim=1, end_dim=2)
-    torch.testing.assert_allclose(distance, distance_original, rtol=0, atol=1e-3)
+    torch.testing.assert_allclose(distance, torch.full_like(distance, expc_result), rtol=0, atol=1e-3)
 
 
 def test_proto_pnet_model_runs():

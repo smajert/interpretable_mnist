@@ -11,24 +11,21 @@ class SimpleConvNetRoot(torch.nn.Module):
         self.activation = activation
 
         # fmt: off
-        self.layers = torch.nn.ModuleList([                    # input: 1 x 28 x 28
-            torch.nn.Conv2d(1, 32, 3, padding="same"),         # 32 x 28 x 28
-            torch.nn.LazyBatchNorm2d(),
+        self.layers = torch.nn.ModuleList([                     # input: 1 x 28 x 28
+            torch.nn.Conv2d(1, 32, 2, stride=2, padding=0),     # 32 x 14 x 14
+            torch.nn.BatchNorm2d(32),
             self.activation,
-            torch.nn.MaxPool2d(2),                             # 32 x 14 x 14
-            torch.nn.Conv2d(32, 128, 3, padding="same"),       # 128 x 14 x 14
-            torch.nn.LazyBatchNorm2d(),
+            torch.nn.Conv2d(32, 128, 2, stride=2, padding=0),   # 128 x 7 x 7
+            torch.nn.BatchNorm2d(128),
             self.activation,
-            torch.nn.MaxPool2d(2),                             # 128 x 7 x 7
-            torch.nn.Conv2d(128, 256, 3, padding="same"),      # 256 x 7 x 7
-            torch.nn.LazyBatchNorm2d(),
+            torch.nn.Conv2d(128, 256, 2, stride=2, padding=0),  # 256 x 3 x 3
+            torch.nn.BatchNorm2d(256),
+            self.activation,                                    # 256 x 3 x 3
+            torch.nn.Conv2d(256, 128, 1, stride=1, padding=0),  # 128 x 3 x 3
+            torch.nn.BatchNorm2d(128),
             self.activation,
-            torch.nn.MaxPool2d(2),                             # 256 x 3 x 3
-            torch.nn.Conv2d(256, 128, 3, padding="same"),      # 128 x 3 x 3
-            torch.nn.LazyBatchNorm2d(),
-            self.activation,
-            torch.nn.Conv2d(128, 64, 3, padding="same"),       # 64 x 3 x 3
-            torch.nn.LazyBatchNorm2d(),
+            torch.nn.Conv2d(128, 64, 1, stride=1, padding=0),   # 64 x 3 x 3
+            torch.nn.BatchNorm2d(64),
             self.activation,
         ])
         # fmt: on

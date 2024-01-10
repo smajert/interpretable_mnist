@@ -6,6 +6,13 @@ from interpretable_mnist.data import load_mnist
 from interpretable_mnist.proto_pnet import ProtoPNetMNIST
 from interpretable_mnist.prototype_plot_utilities import plot_projected_prototype
 
+def _is_lazy_weight_tensor(p: torch.Tensor) -> bool:
+    from torch.nn.parameter import UninitializedParameter
+
+    if isinstance(p, UninitializedParameter):
+        return True
+    return False
+
 
 if __name__ == "__main__":
     torch.set_float32_matmul_precision("medium")
@@ -15,10 +22,17 @@ if __name__ == "__main__":
     trainer = pl.Trainer(
         accelerator="gpu",
         devices=1,
-        max_epochs=params.Training.n_epochs,
+        max_epochs=params.Training.projection_epochs[-1],
         default_root_dir=params.OUTS_BASE_DIR,
     )
     proto_model = ProtoPNetMNIST(params.Training())
+
+    for name, param in proto_model.named_parameters():
+        if _is_lazy_weight_tensor(param):
+            try:
+                print(f"{name} {param}")
+            except:
+                pass
 
 
     trainer.fit(
@@ -28,8 +42,8 @@ if __name__ == "__main__":
 
     for class_idx in range(10):
         class_prototypes = proto_model.projected_prototypes[class_idx]
-        for class_prototype in class_prototypes:
-            plot_projected_prototype(class_prototype)
+        for proto_idx, class_prototype in enumerate(class_prototypes):
+            plot_projected_prototype(class_prototype, title=f"class: {class_idx}, prototype: {proto_idx}")
 
 
     # plt.figure()

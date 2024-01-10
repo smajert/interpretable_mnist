@@ -8,28 +8,6 @@ from interpretable_mnist.base_architecture import SimpleConvNetRoot
 from interpretable_mnist.core import ProjectedPrototype
 
 
-def _get_starting_output_layer_class_connections(n_classes: int, n_protos_per_class: int) -> torch.Tensor:
-    """
-    Get starting connections in fully connected layer. Make positive connections from the
-    prototype slots belonging to the class to the class output neuron and negative connections
-    from prototype slots of other classes.
-
-    :param n_classes: c - Amount of different classes
-    :param n_protos_per_class: p - Amount of prototypes per class
-    :return: [c * p, c] - Weights for properly connected linear layer
-    """
-
-    # slots not belonging to class are not set to -0.5 as per [2] because similarities to
-    # prototypes of other classes should not count as evidence against the class if prototypes are shared
-    starting_weights = torch.full((n_classes * n_protos_per_class, n_classes), fill_value=0.)
-
-    for i in range(n_protos_per_class * n_classes):
-        # connect first `n_slots_per_class` with the class "0", second `n_slots_per_class` with class "1", etc.
-        starting_weights[i, i // n_protos_per_class] = 1
-
-    return starting_weights
-
-
 def prototype_distances_to_similarities(distances: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Convert prototype distances to similarities according to [1], i.e.
@@ -41,8 +19,7 @@ def prototype_distances_to_similarities(distances: torch.Tensor) -> tuple[torch.
 
     :param distances: [b: n_samples_batch c: n_classes p: n_proto_per_class, h: height, w: width] Prototype distances
         across (latent) image
-    :return: [b: n_samples_batch, c: n_classes p: n_proto_per_class] Similarity score of each prototype to the (latent)
-        image,
+    :return: [b: n_samples_batch, c: n_classes p: n_proto_per_class] Similarity score of each prototype to the latent,
         [b: n_samples_batch, c: n_classes, p: n_proto_per_class] Minimum distances for each prototype
     """
     min_distances = torch.min(torch.min(distances, dim=-1)[0], dim=-1)[0]  # [b, c, p]
@@ -119,55 +96,53 @@ class ProtoPNetMNIST(pl.LightningModule):
         """
         super().__init__()
 
+        self.minkowski_distance_order = train_info.minkowski_distance_order
         self.learning_rate = train_info.learning_rate
         self.n_classes = train_info.n_classes  # c - Amount of different classes to predict; 10 for MNIST
         self.n_protos_per_class = train_info.n_protos_per_class  # p - Amount of prototypes each class gets
 
         self.projection_epochs = train_info.projection_epochs
-        self.freeze_epoch = train_info.projection_epochs[-1]
+        self.last_epoch = train_info.projection_epochs[-1]
         self.cluster_loss_weight = train_info.cluster_loss_weight
         self.separation_loss_weight = train_info.separation_loss_weight
-        self.prototypes_shape = (self.n_classes, self.n_protos_per_class, prototype_depth, 1, 1)  # [c, p, d, 1, 1]
+
 
         # --- Setup convolution layers f: ---
         self.conv_root = SimpleConvNetRoot()  # outputs n_samples_batch x 64 x 3 x 3 -> dim [b, k, h, w]
 
         # --- Setup prototypes layer g: ---
-        self.prototypes = torch.nn.Parameter(torch.rand(self.prototypes_shape))  # [c, p, d, 1, 1]
+        prototypes_shape = (self.n_classes, self.n_protos_per_class, prototype_depth, 1, 1)  # [c, p, d, 1, 1]
+        self.prototypes = torch.nn.Parameter(torch.rand(prototypes_shape))  # [c, p, d, 1, 1]
         self.projected_prototypes = [[None] * self.n_protos_per_class for _ in range(self.n_classes)]  # [c, p]
 
-        # --- Setup fully connected output layer h: ---
-        self.output_layer = torch.nn.Linear(self.n_classes * self.n_protos_per_class, self.n_classes, bias=False)
-        self.output_layer.weight = torch.nn.Parameter(  # need to transpose to correctly fit into weights of layer
-            torch.t(_get_starting_output_layer_class_connections(self.n_classes, self.n_protos_per_class))
-        )
-        self.output_layer.requires_grad_(False)
+        # --- Setup weights that connect only class prototype to prediction for class: ---
+        self.output_weights = torch.nn.Parameter(torch.ones((self.n_classes, self.n_protos_per_class)))  # [c, p]
         # note: softmax already in loss function
 
     def _get_prototype_distances(self, z: torch.Tensor) -> torch.Tensor:
         """
-        Calculate distance between the latent image representation `z`
+        Calculate the minkowski distance of order f between the latent image representation `z`
         and the learned prototypes P, normalized to the prototype depth d.
         In brief:
 
-            return |z-P|**2 / d
+            return (sum_i |z_i-P_i|**f) ^ (1/f) / d
 
         :param z: [b: n_samples_batch, k: channels, h: height, w: width] - Latent image representation
         :return: [b: n_samples_batch, c: n_classes, p: n_protos_per_class, h: height, w: width] - (Normalized) distances
             to prototypes
         """
         # prototype shape: [c, p, d, 1, 1]
+        f = self.minkowski_distance_order
         z_minus_p = z[:, np.newaxis, np.newaxis, ...] - self.prototypes[np.newaxis, ...]  # [b, c, p, k, h, w]
-        return torch.sum(z_minus_p, dim=3) ** 2 / self.prototypes.shape[2]  # [b, c, p, h, w]
+        return (1 / self.prototypes.shape[2] * torch.sum(torch.abs(z_minus_p) ** f, dim=3)) ** (1/f)   # [b, c, p, h, w]
 
     def forward(self, x: torch.Tensor):
         z = self.conv_root(x)  # [b, k, h, w]
 
         prototype_distances = self._get_prototype_distances(z)  # [b, c, p, h, w]
         prototype_similarities, min_distances = prototype_distances_to_similarities(prototype_distances)  # [b, c, p]
-        prototype_similarities = torch.flatten(prototype_similarities, start_dim=1)  # [b, c*p]
 
-        x = self.output_layer(prototype_similarities)  # [b, c]
+        x = torch.sum(prototype_similarities * self.output_weights[np.newaxis, ...], dim=-1)  # [b, c]
         return x, min_distances
 
     def training_step(self, batch: list[torch.Tensor], batch_idx: int) -> torch.Tensor:
@@ -175,10 +150,9 @@ class ProtoPNetMNIST(pl.LightningModule):
         y_one_hot = torch.nn.functional.one_hot(y, num_classes=self.n_classes).float()
         y_pred, min_distances = self.forward(x)
 
-        if (self.current_epoch == self.freeze_epoch) and (batch_idx == 0):
+        if (self.current_epoch == self.projection_epochs[-1]) and (batch_idx == 0):
             self.conv_root.requires_grad_(False)
             self.prototypes.requires_grad_(False)
-            self.output_layer.requires_grad_(True)
 
         if self.current_epoch in self.projection_epochs:
             if batch_idx == 0:  # make sure that no old prototype distances are present
@@ -190,6 +164,7 @@ class ProtoPNetMNIST(pl.LightningModule):
             self.push_projected_prototypes()
 
         self.log(f"weight", self.conv_root.layers[0].weight[0, 0, 0, 0], prog_bar=True, on_step=True, on_epoch=True)
+        self.log(f"prototype", self.prototypes[0, 0, 0, 0, 0], prog_bar=True, on_step=False, on_epoch=True)
 
         entropy_loss = torch.nn.CrossEntropyLoss()(y_pred, y_one_hot)
         cluster_loss = torch.mean(_get_min_in_cluster_distance(y, min_distances))
@@ -204,20 +179,16 @@ class ProtoPNetMNIST(pl.LightningModule):
                 # todo: l1 loss of last layer
         )
 
-        self.log(f"loss", loss, prog_bar=True, on_step=True, on_epoch=True)
-        # self.log(f"cluster_loss", cluster_loss, prog_bar=True, on_step=True, on_epoch=True)
-        # self.log(f"separation_loss", separation_loss, prog_bar=True, on_step=True, on_epoch=True)
+        self.log(f"loss", loss, prog_bar=True, on_step=True, on_epoch=False)
+        # self.log(f"cluster_loss", cluster_loss, prog_bar=False, on_step=True, on_epoch=False)
+        # self.log(f"separation_loss", separation_loss, prog_bar=False, on_step=True, on_epoch=False)
         # self.log(f"orthogonality_loss", slot_orthogonality_loss, prog_bar=True, on_step=True, on_epoch=True)
-        # self.log(f"minimum_proto_presence", torch.min(self.proto_presence), prog_bar=True, on_step=True, on_epoch=True)
 
         acc_calculator = Accuracy(task="multiclass", num_classes=self.n_classes).to(self.device)
         accuracy = acc_calculator(y_pred, y)
-        self.log(f"acc", accuracy, prog_bar=True, on_step=True, on_epoch=True)
+        self.log(f"acc", accuracy, prog_bar=True, on_step=False, on_epoch=True)
 
-        if self.current_epoch >= self.freeze_epoch:
-            return entropy_loss
-        else:
-            return loss
+        return loss
 
     @torch.no_grad()
     def update_projected_prototypes(
