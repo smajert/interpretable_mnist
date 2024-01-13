@@ -98,6 +98,10 @@ class ProtoPNetMNIST(pl.LightningModule):
 
         self.minkowski_distance_order = train_info.minkowski_distance_order
         self.learning_rate = train_info.learning_rate
+        self.lr_plateau_reduction_min_lr = train_info.lr_plateau_reduction_min_lr
+        self.lr_plateau_reduction_factor = train_info.lr_plateau_reduction_factor
+        self.lr_plateau_reduction_patience = train_info.lr_pleateau_reduction_patience
+
         self.n_classes = train_info.n_classes  # c - Amount of different classes to predict; 10 for MNIST
         self.n_protos_per_class = train_info.n_protos_per_class  # p - Amount of prototypes each class gets
 
@@ -106,9 +110,10 @@ class ProtoPNetMNIST(pl.LightningModule):
         self.cluster_loss_weight = train_info.cluster_loss_weight
         self.separation_loss_weight = train_info.separation_loss_weight
 
-
         # --- Setup convolution layers f: ---
-        self.conv_root = SimpleConvNetRoot()  # outputs n_samples_batch x 64 x 3 x 3 -> dim [b, k, h, w]
+        self.conv_root = SimpleConvNetRoot(
+            train_info.dropout_probs
+        )  # outputs n_samples_batch x 64 x 3 x 3 -> dim [b, k, h, w]
 
         # --- Setup prototypes layer g: ---
         prototypes_shape = (self.n_classes, self.n_protos_per_class, prototype_depth, 1, 1)  # [c, p, d, 1, 1]
@@ -163,13 +168,9 @@ class ProtoPNetMNIST(pl.LightningModule):
         if (self.current_epoch - 1 in self.projection_epochs) and (batch_idx == 0):
             self.push_projected_prototypes()
 
-        self.log(f"weight", self.conv_root.layers[0].weight[0, 0, 0, 0], prog_bar=True, on_step=True, on_epoch=True)
-        self.log(f"prototype", self.prototypes[0, 0, 0, 0, 0], prog_bar=True, on_step=False, on_epoch=True)
-
         entropy_loss = torch.nn.CrossEntropyLoss()(y_pred, y_one_hot)
         cluster_loss = torch.mean(_get_min_in_cluster_distance(y, min_distances))
         separation_loss = torch.mean(_get_min_out_cluster_distance(y, min_distances))
-
 
         loss = (
                 entropy_loss
@@ -179,7 +180,6 @@ class ProtoPNetMNIST(pl.LightningModule):
                 # todo: l1 loss of last layer
         )
 
-        self.log(f"loss", loss, prog_bar=True, on_step=True, on_epoch=False)
         # self.log(f"cluster_loss", cluster_loss, prog_bar=False, on_step=True, on_epoch=False)
         # self.log(f"separation_loss", separation_loss, prog_bar=False, on_step=True, on_epoch=False)
         # self.log(f"orthogonality_loss", slot_orthogonality_loss, prog_bar=True, on_step=True, on_epoch=True)
@@ -189,6 +189,21 @@ class ProtoPNetMNIST(pl.LightningModule):
         self.log(f"acc", accuracy, prog_bar=True, on_step=False, on_epoch=True)
 
         return loss
+
+    def validation_step(self, batch: list[torch.Tensor], batch_idx: int, step_name: str = "val") -> torch.Tensor:
+        x, y = batch
+        y_one_hot = torch.nn.functional.one_hot(y, num_classes=10).float()
+        y_pred, _ = self.forward(x)
+        loss = torch.nn.CrossEntropyLoss()(y_pred, y_one_hot)
+        acc_calculator = Accuracy(task="multiclass", num_classes=10).to(self.device)
+        accuracy = acc_calculator(y_pred, y)
+
+        self.log(f"{step_name}_acc", accuracy, prog_bar=True, on_step=False, on_epoch=True)
+        self.log(f"{step_name}_loss", loss)
+        return loss
+
+    def test_step(self, batch:  list[torch.Tensor], batch_idx: int) -> torch.Tensor:
+        return self.validation_step(batch, batch_idx, step_name="test")
 
     @torch.no_grad()
     def update_projected_prototypes(
@@ -249,5 +264,15 @@ class ProtoPNetMNIST(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
-        return optimizer
+        scheduler = {
+            'scheduler': torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer,
+                factor=self.lr_plateau_reduction_factor,
+                patience=self.lr_plateau_reduction_patience,
+                min_lr=self.lr_plateau_reduction_min_lr,
+                verbose=True,
+            ),
+            'monitor': 'val_loss'  # the quantity to be monitored
+        }
+        return [optimizer], [scheduler]
 

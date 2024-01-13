@@ -20,7 +20,7 @@ def make_data_loader(dataset: Dataset) -> DataLoader:
 
 
 def load_mnist(
-    load_training_data: bool = True, relative_size_split_dataset: float = 0
+    load_training_data: bool = True, relative_size_split_dataset: float = 0.2
 ) -> DataLoader | tuple[DataLoader, DataLoader]:
     data_transforms = transforms.ToTensor()  # Scales data into [0,1]
 

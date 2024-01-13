@@ -6,38 +6,37 @@ from interpretable_mnist.data import load_mnist
 from interpretable_mnist.proto_pnet import ProtoPNetMNIST
 from interpretable_mnist.prototype_plot_utilities import plot_projected_prototype
 
-def _is_lazy_weight_tensor(p: torch.Tensor) -> bool:
-    from torch.nn.parameter import UninitializedParameter
-
-    if isinstance(p, UninitializedParameter):
-        return True
-    return False
-
 
 if __name__ == "__main__":
     torch.set_float32_matmul_precision("medium")
 
-    mnist_train, mnist_valid = load_mnist(relative_size_split_dataset=0.9)
+    mnist_train, mnist_valid = load_mnist(relative_size_split_dataset=0.2)
 
     trainer = pl.Trainer(
         accelerator="gpu",
+        callbacks=[
+            pl.callbacks.EarlyStopping(
+                "val_loss",
+                patience=params.Training.early_stopping_patience,
+                verbose=True,
+            )
+        ],
         devices=1,
         max_epochs=params.Training.projection_epochs[-1],
         default_root_dir=params.OUTS_BASE_DIR,
     )
     proto_model = ProtoPNetMNIST(params.Training())
 
-    for name, param in proto_model.named_parameters():
-        if _is_lazy_weight_tensor(param):
-            try:
-                print(f"{name} {param}")
-            except:
-                pass
-
-
     trainer.fit(
         model=proto_model,
         train_dataloaders=mnist_train,
+        val_dataloaders=mnist_valid,
+    )
+
+    mnist_test = load_mnist(load_training_data=False, relative_size_split_dataset=0.)
+    trainer.test(
+        dataloaders=mnist_test,
+        ckpt_path="last"
     )
 
     for class_idx in range(10):
