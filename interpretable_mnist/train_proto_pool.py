@@ -14,13 +14,6 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         accelerator="gpu",
-        callbacks=[
-            pl.callbacks.EarlyStopping(
-                "val_loss",
-                patience=params.Training.early_stopping_patience,
-                verbose=True,
-            )
-        ],
         devices=1,
         max_epochs=params.Training.projection_epochs[-1],
         default_root_dir=params.OUTS_BASE_DIR,
@@ -42,7 +35,13 @@ if __name__ == "__main__":
     for class_idx in range(10):
         class_prototypes = proto_model.projected_prototypes[class_idx]
         for proto_idx, class_prototype in enumerate(class_prototypes):
-            plot_projected_prototype(class_prototype, title=f"class: {class_idx}, prototype: {proto_idx}")
+            plot_projected_prototype(
+                class_prototype,
+                title=(
+                    f"class: {class_idx}, prototype: {proto_idx},"
+                    f" weight: {proto_model.output_weights[class_idx, proto_idx]:.3f}"
+                )
+            )
 
 
     # plt.figure()

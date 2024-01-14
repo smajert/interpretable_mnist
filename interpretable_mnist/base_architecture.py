@@ -8,7 +8,7 @@ class SimpleConvNetRoot(torch.nn.Module):
 
     def __init__(
         self,
-        dropout_probs: tuple[int, int, int, int],
+        dropout_probs: tuple[float, float, float, float],
         activation: torch.nn.modules.module.Module = torch.nn.ReLU(),
     ) -> None:
         super().__init__()

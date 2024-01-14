@@ -65,23 +65,27 @@ def _get_min_out_cluster_distance(labels: torch.Tensor, min_distances: torch.Ten
     return out_cluster_min_distances
 
 
-# def _get_slot_orthogonality_loss(proto_presence: torch.Tensor) -> torch.Tensor:
-#     """
-#
-#     :param proto_presence: [c, p, s]
-#     :return: [scalar]
-#     """
-#     n_classes = proto_presence.shape[0]
-#     n_slots = proto_presence.shape[-1]
-#     slot_similarities = torch.nn.functional.cosine_similarity(
-#         proto_presence.unsqueeze(2), proto_presence.unsqueeze(-1), dim=1
-#     )
-#     upper_diagonal_idxs = np.triu_indices(n_slots)
-#     slot_similarities[:, upper_diagonal_idxs[0], upper_diagonal_idxs[1]] = 0
-#     # todo: cosine similarity is between -1 and 1 -> Unclear whether we should aim for
-#     #   it being zero (i.e. sum absolute of slot_similarities) or -1 (i.e. avg_slot_similarities - 1)
-#     return torch.abs(slot_similarities).sum() / (n_slots * n_classes)
-#     # return slot_similarities.sum() / (n_slots * n_classes) - 1
+def _get_prototype_orthogonality_loss(prototypes: torch.Tensor) -> torch.Tensor:
+    """
+    Should calculate the mean cosine similarity between prototypes of the same
+    class. todo: test if this acutally works
+
+    :param prototypes: [c, p, d, 1, 1] - Prototypes to calculate orthogonality for
+    :return: Mean cosine similarity between prototypes of the same class.
+    """
+    n_classes = prototypes.shape[0]
+    n_proto_per_class = prototypes.shape[1]
+    # prototypes shape: [c, p, d, 1, 1]
+    mean_orthogonality = torch.tensor(0.0)
+    for p_idx in range(prototypes.shape[1] - 1):
+        rolled_protos = torch.roll(prototypes, shifts=p_idx + 1, dims=1)
+        proto_cosine_sim = torch.abs(
+            torch.nn.functional.cosine_similarity(prototypes, rolled_protos, dim=2)
+        ).squeeze()  # [c, p]
+        mean_orthogonality = mean_orthogonality + torch.mean(proto_cosine_sim)
+
+    mean_orthogonality = mean_orthogonality / (n_classes * n_proto_per_class * (n_proto_per_class -1 ))
+    return mean_orthogonality
 
 
 class ProtoPNetMNIST(pl.LightningModule):
@@ -108,6 +112,7 @@ class ProtoPNetMNIST(pl.LightningModule):
         self.projection_epochs = train_info.projection_epochs
         self.last_epoch = train_info.projection_epochs[-1]
         self.cluster_loss_weight = train_info.cluster_loss_weight
+        self.orthogonality_loss_weight = train_info.orthogonality_loss_weight
         self.separation_loss_weight = train_info.separation_loss_weight
 
         # --- Setup convolution layers f: ---
@@ -151,19 +156,24 @@ class ProtoPNetMNIST(pl.LightningModule):
         return x, min_distances
 
     def training_step(self, batch: list[torch.Tensor], batch_idx: int) -> torch.Tensor:
-        x, y = batch
-        y_one_hot = torch.nn.functional.one_hot(y, num_classes=self.n_classes).float()
-        y_pred, min_distances = self.forward(x)
-
         if (self.current_epoch == self.projection_epochs[-1]) and (batch_idx == 0):
             self.conv_root.requires_grad_(False)
             self.prototypes.requires_grad_(False)
 
+        x, y = batch
+
         if self.current_epoch in self.projection_epochs:
+            self.eval()
             if batch_idx == 0:  # make sure that no old prototype distances are present
                 self.projected_prototypes = [[None] * self.n_protos_per_class for _ in range(self.n_classes)]  # [c, p]
             self.update_projected_prototypes(x)
+            self.train()
             return None  # this appears to skip the gradient update, though I am not sure if it is officially supported
+
+        y_one_hot = torch.nn.functional.one_hot(y, num_classes=self.n_classes).float()
+        y_pred, min_distances = self.forward(x)
+
+
 
         if (self.current_epoch - 1 in self.projection_epochs) and (batch_idx == 0):
             self.push_projected_prototypes()
@@ -171,11 +181,13 @@ class ProtoPNetMNIST(pl.LightningModule):
         entropy_loss = torch.nn.CrossEntropyLoss()(y_pred, y_one_hot)
         cluster_loss = torch.mean(_get_min_in_cluster_distance(y, min_distances))
         separation_loss = torch.mean(_get_min_out_cluster_distance(y, min_distances))
+        orthogonality_loss = _get_prototype_orthogonality_loss(self.prototypes)
 
         loss = (
                 entropy_loss
                 + self.cluster_loss_weight * cluster_loss
                 + self.separation_loss_weight * separation_loss
+                + self.orthogonality_loss_weight * orthogonality_loss
                 # + slot_orthogonality_loss
                 # todo: l1 loss of last layer
         )
@@ -217,6 +229,7 @@ class ProtoPNetMNIST(pl.LightningModule):
         ), dim=3)  # [b, c, p, h, w]
 
         for c_idx, p_idx in np.ndindex(*self.prototypes.shape[0:2]):  # iterate over indices of each prototype
+            # todo add condition that prototype must be of class
             distances_to_prototype = distances_to_protos[:, c_idx, p_idx, ...]  # [b, h, w]
             batch_min_idx, height_min_idx, width_min_idx = np.unravel_index(
                 torch.argmin(distances_to_prototype).cpu(), distances_to_prototype.shape
