@@ -173,8 +173,6 @@ class ProtoPNetMNIST(pl.LightningModule):
         y_one_hot = torch.nn.functional.one_hot(y, num_classes=self.n_classes).float()
         y_pred, min_distances = self.forward(x)
 
-
-
         if (self.current_epoch - 1 in self.projection_epochs) and (batch_idx == 0):
             self.push_projected_prototypes()
 
