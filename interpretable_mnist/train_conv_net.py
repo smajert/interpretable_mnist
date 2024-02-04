@@ -10,7 +10,7 @@ from interpretable_mnist.conv_net import ConvNetMNIST
 if __name__ == "__main__":
     torch.set_float32_matmul_precision("medium")
 
-    mnist_train, mnist_valid = load_mnist(relative_size_split_dataset=0.9)
+    mnist_train, mnist_valid = load_mnist(relative_size_split_dataset=0.2)
 
     trainer = pl.Trainer(
         accelerator="gpu",
@@ -19,7 +19,7 @@ if __name__ == "__main__":
         default_root_dir=params.OUTS_BASE_DIR,
     )
     trainer.fit(
-        model=ConvNetMNIST(),
+        model=ConvNetMNIST(params.Training()),
         train_dataloaders=mnist_train,
         val_dataloaders=mnist_valid
     )

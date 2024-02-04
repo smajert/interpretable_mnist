@@ -108,10 +108,12 @@ class ProtoPNetMNIST(pl.LightningModule):
 
         self.n_classes = train_info.n_classes  # c - Amount of different classes to predict; 10 for MNIST
         self.n_protos_per_class = train_info.n_protos_per_class  # p - Amount of prototypes each class gets
+        self.constrain_prototypes_to_class = train_info.constrain_prototypes_to_class
 
         self.projection_epochs = train_info.projection_epochs
         self.last_epoch = train_info.projection_epochs[-1]
         self.cluster_loss_weight = train_info.cluster_loss_weight
+        self.l1_loss_weight = train_info.l1_loss_weight
         self.orthogonality_loss_weight = train_info.orthogonality_loss_weight
         self.separation_loss_weight = train_info.separation_loss_weight
 
@@ -159,6 +161,8 @@ class ProtoPNetMNIST(pl.LightningModule):
         if (self.current_epoch == self.projection_epochs[-1]) and (batch_idx == 0):
             self.conv_root.requires_grad_(False)
             self.prototypes.requires_grad_(False)
+            with torch.no_grad():
+                self.output_weights /= torch.sum(self.output_weights)
 
         x, y = batch
 
@@ -166,7 +170,8 @@ class ProtoPNetMNIST(pl.LightningModule):
             self.eval()
             if batch_idx == 0:  # make sure that no old prototype distances are present
                 self.projected_prototypes = [[None] * self.n_protos_per_class for _ in range(self.n_classes)]  # [c, p]
-            self.update_projected_prototypes(x)
+                self.optimizers().param_groups[0]['lr'] = self.learning_rate
+            self.update_projected_prototypes(x, y)
             self.train()
             return None  # this appears to skip the gradient update, though I am not sure if it is officially supported
 
@@ -177,18 +182,26 @@ class ProtoPNetMNIST(pl.LightningModule):
             self.push_projected_prototypes()
 
         entropy_loss = torch.nn.CrossEntropyLoss()(y_pred, y_one_hot)
-        cluster_loss = torch.mean(_get_min_in_cluster_distance(y, min_distances))
-        separation_loss = torch.mean(_get_min_out_cluster_distance(y, min_distances))
-        orthogonality_loss = _get_prototype_orthogonality_loss(self.prototypes)
+        if self.cluster_loss_weight is not None:
+            cluster_loss = torch.mean(_get_min_in_cluster_distance(y, min_distances)) * self.cluster_loss_weight
+        else:
+            cluster_loss = 0.0
+        if self.separation_loss_weight is not None:
+            separation_loss = torch.mean(_get_min_out_cluster_distance(y, min_distances)) * self.separation_loss_weight
+        else:
+            separation_loss = 0.0
+        if self.orthogonality_loss_weight is not None:
+            orthogonality_loss = _get_prototype_orthogonality_loss(self.prototypes) * self.orthogonality_loss_weight
+        else:
+            orthogonality_loss = 0.0
+        if self.l1_loss_weight is not None:
+            l1_loss = (
+                torch.linalg.vector_norm(self.output_weights, ord=1) / (self.n_classes * self.n_protos_per_class)
+            ) * self.l1_loss_weight
+        else:
+            l1_loss = 0.0
 
-        loss = (
-                entropy_loss
-                + self.cluster_loss_weight * cluster_loss
-                + self.separation_loss_weight * separation_loss
-                + self.orthogonality_loss_weight * orthogonality_loss
-                # + slot_orthogonality_loss
-                # todo: l1 loss of last layer
-        )
+        loss = entropy_loss + cluster_loss + separation_loss + orthogonality_loss + l1_loss
 
         # self.log(f"cluster_loss", cluster_loss, prog_bar=False, on_step=True, on_epoch=False)
         # self.log(f"separation_loss", separation_loss, prog_bar=False, on_step=True, on_epoch=False)
@@ -219,6 +232,7 @@ class ProtoPNetMNIST(pl.LightningModule):
     def update_projected_prototypes(
             self,
             batch_data: torch.Tensor,  # [b, K, H, W]
+            labels: torch.Tensor,  # [b]
     ) -> None:
         z = self.conv_root(batch_data)  # [b, k, h, w]
         distances_to_protos = torch.sum(torch.abs(
@@ -226,9 +240,11 @@ class ProtoPNetMNIST(pl.LightningModule):
             - self.prototypes[np.newaxis, ...]  # [1, c, p, d, 1, 1]
         ), dim=3)  # [b, c, p, h, w]
 
-        for c_idx, p_idx in np.ndindex(*self.prototypes.shape[0:2]):  # iterate over indices of each prototype
-            # todo add condition that prototype must be of class
+        for c_idx, p_idx in np.ndindex(*self.prototypes.shape[0:2]):  # iterate over indices for each prototype
             distances_to_prototype = distances_to_protos[:, c_idx, p_idx, ...]  # [b, h, w]
+            if self.constrain_prototypes_to_class:
+                # make sure that only images of the class are used as prototypes for the class
+                distances_to_prototype[labels != c_idx, ...] = float('inf')
             batch_min_idx, height_min_idx, width_min_idx = np.unravel_index(
                 torch.argmin(distances_to_prototype).cpu(), distances_to_prototype.shape
             )

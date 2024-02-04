@@ -4,7 +4,7 @@ import tempfile
 import torch
 from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision import transforms
-from torchvision.datasets import MNIST
+from torchvision.datasets import FashionMNIST
 
 from interpretable_mnist import params
 
@@ -24,7 +24,7 @@ def load_mnist(
 ) -> DataLoader | tuple[DataLoader, DataLoader]:
     data_transforms = transforms.ToTensor()  # Scales data into [0,1]
 
-    mnist = MNIST(
+    mnist = FashionMNIST(
         str(tempfile.gettempdir() / Path("MNIST")),
         transform=data_transforms,
         train=load_training_data,
