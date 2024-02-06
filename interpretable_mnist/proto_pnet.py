@@ -92,6 +92,7 @@ class ProtoPNetMNIST(pl.LightningModule):
     def __init__(
         self,
         train_info: params.Training,
+        n_trainig_batches: int,
         prototype_depth: int = 64
     ) -> None:
         """
@@ -117,6 +118,8 @@ class ProtoPNetMNIST(pl.LightningModule):
         self.orthogonality_loss_weight = train_info.orthogonality_loss_weight
         self.separation_loss_weight = train_info.separation_loss_weight
 
+        self.n_training_batches = n_trainig_batches
+
         # --- Setup convolution layers f: ---
         self.conv_root = SimpleConvNetRoot(
             train_info.dropout_probs
@@ -128,7 +131,7 @@ class ProtoPNetMNIST(pl.LightningModule):
         self.projected_prototypes = [[None] * self.n_protos_per_class for _ in range(self.n_classes)]  # [c, p]
 
         # --- Setup weights that connect only class prototype to prediction for class: ---
-        self.output_weights = torch.nn.Parameter(torch.ones((self.n_classes, self.n_protos_per_class)))  # [c, p]
+        self.output_weights = torch.nn.Parameter(torch.rand((self.n_classes, self.n_protos_per_class)))  # [c, p]
         # note: softmax already in loss function
 
     def _get_prototype_distances(self, z: torch.Tensor) -> torch.Tensor:
@@ -161,6 +164,7 @@ class ProtoPNetMNIST(pl.LightningModule):
         if (self.current_epoch == self.projection_epochs[-1]) and (batch_idx == 0):
             self.conv_root.requires_grad_(False)
             self.prototypes.requires_grad_(False)
+            self.output_weights.requires_grad_(False)
             with torch.no_grad():
                 self.output_weights /= torch.sum(self.output_weights)
 
@@ -172,14 +176,14 @@ class ProtoPNetMNIST(pl.LightningModule):
                 self.projected_prototypes = [[None] * self.n_protos_per_class for _ in range(self.n_classes)]  # [c, p]
                 self.optimizers().param_groups[0]['lr'] = self.learning_rate
             self.update_projected_prototypes(x, y)
+            if batch_idx == self.n_training_batches - 1:
+                print(f"Pushing protos in epoch {self.current_epoch}")
+                self.push_projected_prototypes()
             self.train()
             return None  # this appears to skip the gradient update, though I am not sure if it is officially supported
 
         y_one_hot = torch.nn.functional.one_hot(y, num_classes=self.n_classes).float()
         y_pred, min_distances = self.forward(x)
-
-        if (self.current_epoch - 1 in self.projection_epochs) and (batch_idx == 0):
-            self.push_projected_prototypes()
 
         entropy_loss = torch.nn.CrossEntropyLoss()(y_pred, y_one_hot)
         if self.cluster_loss_weight is not None:

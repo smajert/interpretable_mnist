@@ -18,7 +18,7 @@ class Training:
     n_classes: int = 10
     n_data_loader_workers: int = 8
     n_protos_per_class: int = 5
-    projection_epochs: list[int] = [5, 50]  # sorted with highest epoch last!
+    projection_epochs: list[int] = [5, 10]  # sorted with highest epoch last! - Epochs start at 0
     cluster_loss_weight: float = None
     l1_loss_weight: float = None
     orthogonality_loss_weight: float = None

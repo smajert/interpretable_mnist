@@ -19,17 +19,14 @@ def plot_prototype_presence(proto_presence: torch.Tensor, class_idx: int, slot_i
     plt.show()
 
 
-def plot_projected_prototype(proto: ProjectedPrototype, title: str | None = None) -> None:
+def plot_projected_prototype(proto: ProjectedPrototype, axis: plt.Axes) -> None:
     img = proto.training_sample[0, ...]
     height_start = proto.prototype_location_in_training_sample[0].start
     height_stop = proto.prototype_location_in_training_sample[0].stop
     width_start = proto.prototype_location_in_training_sample[1].start
     width_stop = proto.prototype_location_in_training_sample[1].stop
 
-    plt.figure()
-    plt.imshow(img)
-    plt.title(title)
-
+    axis.imshow(img)
     rectangle = patches.Rectangle(
         (width_start, height_start),
         height=height_stop - height_start,
@@ -38,5 +35,28 @@ def plot_projected_prototype(proto: ProjectedPrototype, title: str | None = None
         edgecolor='r',
         facecolor='none'
     )
-    plt.gca().add_patch(rectangle)
+    axis.add_patch(rectangle)
+
+
+def plot_model_prototypes(protos: list[list[ProjectedPrototype]], out_weights: np.ndarray) -> None:
+    n_classes = len(protos)
+    n_prototypes = len(protos[0])
+    fig, axis = plt.subplots(n_prototypes, n_classes)
+
+    for class_idx, class_prototypes in enumerate(protos):
+        for proto_idx, proj_proto in enumerate(class_prototypes):
+            ax = axis[proto_idx, class_idx]
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+            ax.spines["left"].set_visible(False)
+            ax.spines["bottom"].set_visible(False)
+            ax.tick_params(bottom=False, top=False, labelbottom=False)
+            plot_projected_prototype(proj_proto, ax)
+            if class_idx == 0:
+                ax.set_ylabel(f"Prototype {proto_idx}: ")
+            if proto_idx == 0:
+                ax.set_title(f"Class {class_idx}: \n Weight: {out_weights[class_idx, proto_idx]:.2f}")
+            else:
+                ax.set_title(f"Weight: {out_weights[class_idx, proto_idx]:.2f}")
     plt.show()
+
