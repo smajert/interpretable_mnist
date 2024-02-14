@@ -29,3 +29,10 @@ if __name__ == "__main__":
         dataloaders=mnist_test,
         ckpt_path="last"
     )
+
+    mnist_augmented = load_mnist(load_training_data=False, do_augmentation=True, relative_size_split_dataset=0.0)
+    trainer.test(
+        dataloaders=mnist_augmented,
+        ckpt_path="last",
+    )
+

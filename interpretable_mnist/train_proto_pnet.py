@@ -26,10 +26,16 @@ if __name__ == "__main__":
         val_dataloaders=mnist_valid,
     )
 
-    mnist_test = load_mnist(load_training_data=False, relative_size_split_dataset=0.)
+    mnist_test = load_mnist(load_training_data=False, relative_size_split_dataset=0.0)
     trainer.test(
         dataloaders=mnist_test,
-        ckpt_path="last"
+        ckpt_path="last",
+    )
+
+    mnist_augmented = load_mnist(load_training_data=False, do_augmentation=True, relative_size_split_dataset=0.0)
+    trainer.test(
+        dataloaders=mnist_augmented,
+        ckpt_path="last",
     )
 
     plot_model_prototypes(proto_model.projected_prototypes, proto_model.output_weights.detach().numpy())

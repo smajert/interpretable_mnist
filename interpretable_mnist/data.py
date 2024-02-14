@@ -20,9 +20,11 @@ def make_data_loader(dataset: Dataset) -> DataLoader:
 
 
 def load_mnist(
-    load_training_data: bool = True, relative_size_split_dataset: float = 0.
+    load_training_data: bool = True, relative_size_split_dataset: float = 0., do_augmentation:bool = False # todo add transformation if requested to get out of distribution data
 ) -> DataLoader | tuple[DataLoader, DataLoader]:
     data_transforms = transforms.ToTensor()  # Scales data into [0,1]
+    if do_augmentation:
+        data_transforms = transforms.Compose([transforms.RandomVerticalFlip(p=1.0), transforms.ToTensor()])
 
     mnist = FashionMNIST(
         str(tempfile.gettempdir() / Path("MNIST")),

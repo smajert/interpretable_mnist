@@ -29,7 +29,7 @@ def test_prototype_distances_to_similarities():
 def test_prototypes_are_differentiated_when_calling_distance():
     train_config = params.Training()
     train_config.n_classes, train_config.n_prototypes, train_config.n_slots_per_class = 3, 10, 2
-    model = proto_pnet.ProtoPNetMNIST(train_config, prototype_depth=64)
+    model = proto_pnet.ProtoPNetMNIST(train_config, prototype_depth=64, n_trainig_batches=1)
     assert model.prototypes.grad is None
 
     n, k, h, w = 20, 64, 3, 3
@@ -55,7 +55,7 @@ def test_distance_implementation_equal_to_protopool(prototypes, expc_result):
     train_config.n_classes = PROTOTYPES_SHAPE[0]
     train_config.n_protos_per_class = PROTOTYPES_SHAPE[1]
     train_config.minkowski_distance_order = 2
-    model = proto_pnet.ProtoPNetMNIST(train_config, prototype_depth=PROTOTYPES_SHAPE[2])
+    model = proto_pnet.ProtoPNetMNIST(train_config, prototype_depth=PROTOTYPES_SHAPE[2], n_trainig_batches=1)
     model.prototypes = torch.nn.Parameter(prototypes)
 
     n, k, h, w = 20, PROTOTYPES_SHAPE[2], 3, 3
@@ -68,7 +68,7 @@ def test_distance_implementation_equal_to_protopool(prototypes, expc_result):
 def test_proto_pnet_model_runs():
     train_config = params.Training()
     train_config.n_classes, train_config.n_protos_per_class = 10, 2
-    model = proto_pnet.ProtoPNetMNIST(train_config, prototype_depth=64)
+    model = proto_pnet.ProtoPNetMNIST(train_config, prototype_depth=64, n_trainig_batches=1)
     dummy_input = torch.tensor(np.random.uniform(low=0, high=1, size=(10, 1, 28, 28)).astype(np.float32))
     class_pred, _ = model(dummy_input)
     assert class_pred[0].shape[0] == train_config.n_classes
@@ -103,16 +103,17 @@ def test_min_out_cluster_distances():
 def test_prototype_projection():
     train_config = params.Training()
     train_config.n_classes, train_config.n_protos_per_class = 10, 2
+    train_config.constrain_prototypes_to_class = False
 
-    model = proto_pnet.ProtoPNetMNIST(train_config, prototype_depth=64)
+    model = proto_pnet.ProtoPNetMNIST(train_config, prototype_depth=64, n_trainig_batches=1)
     model.eval()  # need to set to eval because otherwise conv_root will be called with dropout
-    mnist_batch = next(iter(load_mnist(relative_size_split_dataset=0.)))[0]
-    z = model.conv_root(mnist_batch)
+    mnist_batch = next(iter(load_mnist(relative_size_split_dataset=0.)))
+    z = model.conv_root(mnist_batch[0])
     prototype = z[0, :, 0, 0]
 
     with torch.no_grad():
         model.prototypes[0, 0, ...] = prototype[:, np.newaxis, np.newaxis]
-    model.update_projected_prototypes(mnist_batch)
+    model.update_projected_prototypes(mnist_batch[0], mnist_batch[1])
     model.push_projected_prototypes()
 
     torch.testing.assert_allclose(model.projected_prototypes[0][0].prototype, prototype, rtol=0, atol=1e-11)

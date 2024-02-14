@@ -50,7 +50,7 @@ def plot_model_prototypes(protos: list[list[ProjectedPrototype]], out_weights: n
             ax.spines["right"].set_visible(False)
             ax.spines["left"].set_visible(False)
             ax.spines["bottom"].set_visible(False)
-            ax.tick_params(bottom=False, top=False, labelbottom=False)
+            ax.tick_params(bottom=False, top=False, left=False, right=False, labelbottom=False, labelleft=False)
             plot_projected_prototype(proj_proto, ax)
             if class_idx == 0:
                 ax.set_ylabel(f"Prototype {proto_idx}: ")

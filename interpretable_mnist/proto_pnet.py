@@ -122,7 +122,7 @@ class ProtoPNetMNIST(pl.LightningModule):
 
         # --- Setup convolution layers f: ---
         self.conv_root = SimpleConvNetRoot(
-            train_info.dropout_probs
+            train_info.dropout_probs, train_info.do_batch_norm
         )  # outputs n_samples_batch x 64 x 3 x 3 -> dim [b, k, h, w]
 
         # --- Setup prototypes layer g: ---
@@ -161,6 +161,7 @@ class ProtoPNetMNIST(pl.LightningModule):
         return x, min_distances
 
     def training_step(self, batch: list[torch.Tensor], batch_idx: int) -> torch.Tensor:
+
         if (self.current_epoch == self.projection_epochs[-1]) and (batch_idx == 0):
             self.conv_root.requires_grad_(False)
             self.prototypes.requires_grad_(False)
@@ -171,7 +172,6 @@ class ProtoPNetMNIST(pl.LightningModule):
         x, y = batch
 
         if self.current_epoch in self.projection_epochs:
-            self.eval()
             if batch_idx == 0:  # make sure that no old prototype distances are present
                 self.projected_prototypes = [[None] * self.n_protos_per_class for _ in range(self.n_classes)]  # [c, p]
                 self.optimizers().param_groups[0]['lr'] = self.learning_rate
@@ -179,7 +179,6 @@ class ProtoPNetMNIST(pl.LightningModule):
             if batch_idx == self.n_training_batches - 1:
                 print(f"Pushing protos in epoch {self.current_epoch}")
                 self.push_projected_prototypes()
-            self.train()
             return None  # this appears to skip the gradient update, though I am not sure if it is officially supported
 
         y_one_hot = torch.nn.functional.one_hot(y, num_classes=self.n_classes).float()

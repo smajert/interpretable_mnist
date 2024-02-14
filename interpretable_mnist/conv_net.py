@@ -9,7 +9,7 @@ from torchmetrics import Accuracy
 class ConvNetMNIST(pl.LightningModule):
     def __init__(self, train_info: params.Training,) -> None:
         super().__init__()
-        self.conv_net_root = SimpleConvNetRoot(train_info.dropout_probs)  # outputs 64 x 3 x 3
+        self.conv_net_root = SimpleConvNetRoot(train_info.dropout_probs, train_info.do_batch_norm)  # outputs 64 x 3 x 3
         self.last_layers = torch.nn.Sequential(
             torch.nn.Flatten(),        # 576
             torch.nn.Linear(576, 50),  # 50
