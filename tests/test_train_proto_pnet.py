@@ -49,7 +49,7 @@ PROTOTYPES_SHAPE = (10, 1, 64, 1, 1)  # c, p, d, 1, 1
         (np.pi * torch.ones(size=PROTOTYPES_SHAPE), (math.pi - 1)),  # expected: sqrt(1 / d * d * |1-pi|)**2  = pi-1
     ]
 )
-def test_distance_implementation_equal_to_protopool(prototypes, expc_result):
+def test_distance_implementation_works_correctly(prototypes, expc_result):
     train_config = params.Training()
     train_config.n_classes = PROTOTYPES_SHAPE[0]
     train_config.n_protos_per_class = PROTOTYPES_SHAPE[1]
@@ -123,3 +123,15 @@ def test_prototype_projection():
     assert not torch.allclose(
         torch.from_numpy(model.projected_prototypes[1][0].prototype), prototype, rtol=0, atol=1e-11
     )
+
+
+@pytest.mark.parametrize(
+    "prototypes, expected_loss", [
+        (torch.tensor([[[1, 0, 0, 0], [0, 1, 0, 0]], [[0, 0, 1, 0], [0, 0, 0, 1]]], dtype=torch.float32), 0.0),
+        (torch.tensor([[[1, 0, 0], [-1, 0, 0]], [[0, -1, 0], [0, 1, 0]]], dtype=torch.float32), 1.0),
+        (torch.tensor([[[0, 0, 1], [0, 0, 1]], [[0, 1, 0], [0, 1, 0]]], dtype=torch.float32), 1.0),
+    ]
+)
+def test_prototype_orthogonality_calculated_correctly(prototypes, expected_loss):
+    ortho_loss = proto_pnet._get_prototype_orthogonality_loss(prototypes)
+    torch.testing.assert_allclose(ortho_loss, expected_loss, rtol=0, atol=1e-11)

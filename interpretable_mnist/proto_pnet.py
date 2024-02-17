@@ -67,24 +67,24 @@ def _get_min_out_cluster_distance(labels: torch.Tensor, min_distances: torch.Ten
 
 def _get_prototype_orthogonality_loss(prototypes: torch.Tensor) -> torch.Tensor:
     """
-    Should calculate the mean cosine similarity between prototypes of the same
-    class. todo: test if this acutally works
+    Calculates the mean absolute cosine similarity between prototypes of the same
+    class.
 
     :param prototypes: [c, p, d, 1, 1] - Prototypes to calculate orthogonality for
-    :return: Mean cosine similarity between prototypes of the same class.
+    :return: Mean absolute cosine similarity between prototypes of the same class.
     """
     n_classes = prototypes.shape[0]
     n_proto_per_class = prototypes.shape[1]
     # prototypes shape: [c, p, d, 1, 1]
-    mean_orthogonality = torch.tensor(0.0)
+    sum_orthogonality = torch.tensor(0.0)
     for p_idx in range(prototypes.shape[1] - 1):
         rolled_protos = torch.roll(prototypes, shifts=p_idx + 1, dims=1)
         proto_cosine_sim = torch.abs(
             torch.nn.functional.cosine_similarity(prototypes, rolled_protos, dim=2)
         ).squeeze()  # [c, p]
-        mean_orthogonality = mean_orthogonality + torch.mean(proto_cosine_sim)
+        sum_orthogonality = sum_orthogonality + torch.sum(proto_cosine_sim)
 
-    mean_orthogonality = mean_orthogonality / (n_classes * n_proto_per_class * (n_proto_per_class -1 ))
+    mean_orthogonality = sum_orthogonality / (n_classes * n_proto_per_class * (n_proto_per_class - 1))
     return mean_orthogonality
 
 
