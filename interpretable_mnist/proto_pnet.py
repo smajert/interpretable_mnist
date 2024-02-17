@@ -1,3 +1,5 @@
+from dataclasses import asdict
+
 import lightning.pytorch as pl
 import numpy as np
 import torch
@@ -136,6 +138,8 @@ class ProtoPNetMNIST(pl.LightningModule):
         # --- Setup weights that connect only class prototype to prediction for class: ---
         self.output_weights = torch.nn.Parameter(torch.rand((self.n_classes, self.n_protos_per_class)))  # [c, p]
         # note: softmax already in loss function
+
+        self.save_hyperparameters(asdict(train_info))
 
     def _get_prototype_distances(self, z: torch.Tensor) -> torch.Tensor:
         """

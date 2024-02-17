@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -6,6 +7,7 @@ OUTS_BASE_DIR = REPO_ROOT / "outs"
 RANDOM_SEED = 0
 
 
+@dataclass
 class Training:
     batch_size: int = 256
     constrain_prototypes_to_class: bool = True
@@ -20,7 +22,7 @@ class Training:
     n_classes: int = 10
     n_data_loader_workers: int = 8
     n_protos_per_class: int = 5
-    projection_epochs: list[int] = [5, 10, 20]  # sorted with highest epoch last! - Epochs start at 0
+    projection_epochs: tuple[int, ...] = (5, 10, 20)  # sorted with highest epoch last! - Epochs start at 0
     n_freeze_epochs: int = 2
     cluster_loss_weight: float = None
     l1_loss_weight: float = None
