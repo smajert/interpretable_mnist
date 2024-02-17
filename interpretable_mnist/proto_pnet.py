@@ -111,8 +111,10 @@ class ProtoPNetMNIST(pl.LightningModule):
         self.n_protos_per_class = train_info.n_protos_per_class  # p - Amount of prototypes each class gets
         self.constrain_prototypes_to_class = train_info.constrain_prototypes_to_class
 
+        self.n_freeze_epochs = train_info.n_freeze_epochs
         self.projection_epochs = train_info.projection_epochs
         self.last_epoch = train_info.projection_epochs[-1]
+
         self.cluster_loss_weight = train_info.cluster_loss_weight
         self.l1_loss_weight = train_info.l1_loss_weight
         self.orthogonality_loss_weight = train_info.orthogonality_loss_weight
@@ -124,6 +126,7 @@ class ProtoPNetMNIST(pl.LightningModule):
         self.conv_root = SimpleConvNetRoot(
             train_info.dropout_probs, train_info.do_batch_norm
         )  # outputs n_samples_batch x 64 x 3 x 3 -> dim [b, k, h, w]
+        self.conv_root.requires_grad_(False)
 
         # --- Setup prototypes layer g: ---
         prototypes_shape = (self.n_classes, self.n_protos_per_class, prototype_depth, 1, 1)  # [c, p, d, 1, 1]
@@ -161,6 +164,8 @@ class ProtoPNetMNIST(pl.LightningModule):
         return x, min_distances
 
     def training_step(self, batch: list[torch.Tensor], batch_idx: int) -> torch.Tensor:
+        if self.current_epoch >= self.n_freeze_epochs:
+            self.conv_root.requires_grad_(True)
 
         if (self.current_epoch == self.projection_epochs[-1]) and (batch_idx == 0):
             self.conv_root.requires_grad_(False)

@@ -6,8 +6,7 @@ from interpretable_mnist.data import load_mnist
 from interpretable_mnist.conv_net import ConvNetMNIST
 
 
-
-if __name__ == "__main__":
+def train_conv_net(do_evaluation: bool) -> ConvNetMNIST:
     torch.set_float32_matmul_precision("medium")
 
     mnist_train, mnist_valid = load_mnist(relative_size_split_dataset=0.2)
@@ -24,15 +23,21 @@ if __name__ == "__main__":
         val_dataloaders=mnist_valid
     )
 
-    mnist_test = load_mnist(load_training_data=False)
-    trainer.test(
-        dataloaders=mnist_test,
-        ckpt_path="last"
-    )
+    if do_evaluation:
+        mnist_test = load_mnist(load_training_data=False)
+        trainer.test(
+            dataloaders=mnist_test,
+            ckpt_path="last"
+        )
 
-    mnist_augmented = load_mnist(load_training_data=False, do_augmentation=True, relative_size_split_dataset=0.0)
-    trainer.test(
-        dataloaders=mnist_augmented,
-        ckpt_path="last",
-    )
+        mnist_augmented = load_mnist(load_training_data=False, do_augmentation=True, relative_size_split_dataset=0.0)
+        trainer.test(
+            dataloaders=mnist_augmented,
+            ckpt_path="last",
+        )
 
+    return trainer.model
+
+
+if __name__ == "__main__":
+    train_conv_net(do_evaluation=True)

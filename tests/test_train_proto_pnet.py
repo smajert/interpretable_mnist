@@ -1,6 +1,5 @@
 import math
 
-from matplotlib import pyplot as plt
 import numpy as np
 import pytest
 import torch
