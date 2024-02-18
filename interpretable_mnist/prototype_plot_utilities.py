@@ -1,25 +1,18 @@
+from itertools import cycle
+
 from matplotlib import pyplot as plt
 from matplotlib import patches
 import numpy as np
-import torch
+from prettytable import PrettyTable
 
-from interpretable_mnist.core import ProjectedPrototype
+from interpretable_mnist.core import ClassEvidence, ProjectedPrototype
 
-
-def plot_prototype_presence(proto_presence: torch.Tensor, class_idx: int, slot_idx: int) -> None:
-    proto_presence_numpy = proto_presence.detach().cpu().numpy()
-    prototype_axis = np.arange(0, len(proto_presence_numpy[class_idx, :, slot_idx]))
-
-    plt.figure()
-    plt.title(f"Prototype assignment for slot {slot_idx} of class {class_idx}")
-    plt.bar(prototype_axis, proto_presence_numpy[class_idx, :, slot_idx])
-    plt.xlabel("Prototype index")
-    plt.ylabel("Assignment")
-    plt.grid()
-    plt.show()
+FASHION_MNIST_CLASS_NAMES = (
+    'T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat', 'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot'
+)
 
 
-def plot_projected_prototype(proto: ProjectedPrototype, axis: plt.Axes) -> None:
+def plot_projected_prototype(proto: ProjectedPrototype, axis: plt.Axes, rect_color: str = 'r') -> None:
     img = proto.training_sample[0, ...]
     height_start = proto.prototype_location_in_training_sample[0].start
     height_stop = proto.prototype_location_in_training_sample[0].stop
@@ -31,11 +24,19 @@ def plot_projected_prototype(proto: ProjectedPrototype, axis: plt.Axes) -> None:
         (width_start, height_start),
         height=height_stop - height_start,
         width=width_stop - width_start,
-        linewidth=1,
-        edgecolor='r',
+        linewidth=3,
+        edgecolor=rect_color,
         facecolor='none'
     )
     axis.add_patch(rectangle)
+
+
+def _make_axis_ticks_invisible_inplace(axis: plt.axis) -> None:
+    axis.spines["top"].set_visible(False)
+    axis.spines["right"].set_visible(False)
+    axis.spines["left"].set_visible(False)
+    axis.spines["bottom"].set_visible(False)
+    axis.tick_params(bottom=False, top=False, left=False, right=False, labelbottom=False, labelleft=False)
 
 
 def plot_model_prototypes(protos: list[list[ProjectedPrototype]], out_weights: np.ndarray) -> None:
@@ -46,17 +47,71 @@ def plot_model_prototypes(protos: list[list[ProjectedPrototype]], out_weights: n
     for class_idx, class_prototypes in enumerate(protos):
         for proto_idx, proj_proto in enumerate(class_prototypes):
             ax = axis[proto_idx, class_idx]
-            ax.spines["top"].set_visible(False)
-            ax.spines["right"].set_visible(False)
-            ax.spines["left"].set_visible(False)
-            ax.spines["bottom"].set_visible(False)
-            ax.tick_params(bottom=False, top=False, left=False, right=False, labelbottom=False, labelleft=False)
+            _make_axis_ticks_invisible_inplace(ax)
             plot_projected_prototype(proj_proto, ax)
             if class_idx == 0:
                 ax.set_ylabel(f"Prototype {proto_idx}: ")
             if proto_idx == 0:
-                ax.set_title(f"Class {class_idx}: \n Weight: {out_weights[class_idx, proto_idx]:.2f}")
+                ax.set_title(
+                    f"Class {FASHION_MNIST_CLASS_NAMES[class_idx]}: \n Weight: {out_weights[class_idx, proto_idx]:.2f}"
+                )
             else:
                 ax.set_title(f"Weight: {out_weights[class_idx, proto_idx]:.2f}")
     plt.show()
+
+
+def plot_class_evidence(class_evidence: ClassEvidence) -> None:
+    table = PrettyTable()
+    table.field_names = FASHION_MNIST_CLASS_NAMES
+    table.add_row([f"{pred:.3f}" for pred in class_evidence.predictions.tolist()])
+
+    n_prototypes = len(class_evidence.projected_prototypes)
+    property_cycler = cycle(
+        [color_linewidth for color_linewidth in zip(['r', 'g', 'b', 'y', 'c', 'm', 'w', 'k'], [8, 7, 6, 5, 4, 3, 2, 1])]
+    )
+    proto_props = [next(iter(property_cycler)) for _ in range(n_prototypes)]
+
+    plt.figure()
+    sample_axis = plt.gca()
+    plt.imshow(class_evidence.sample)
+    _make_axis_ticks_invisible_inplace(sample_axis)
+    plt.title(table.get_string(), fontname='monospace')
+    for proto_idx, rect_props in enumerate(proto_props):
+        height_start = class_evidence.prototype_locations_in_sample[proto_idx][0].start
+        height_stop = class_evidence.prototype_locations_in_sample[proto_idx][0].stop
+        width_start = class_evidence.prototype_locations_in_sample[proto_idx][1].start
+        width_stop = class_evidence.prototype_locations_in_sample[proto_idx][1].stop
+        rectangle = patches.Rectangle(
+            (width_start, height_start),
+            height=height_stop - height_start,
+            width=width_stop - width_start,
+            linewidth=rect_props[1],
+            edgecolor=rect_props[0],
+            facecolor='none',
+        )
+        sample_axis.add_patch(rectangle)
+
+    proto_fig, proto_axis = plt.subplots(n_prototypes, 2)
+    class_prototypes = class_evidence.projected_prototypes
+    for proto_idx, proj_proto in enumerate(class_prototypes):
+        ax = proto_axis[proto_idx, 0]
+        _make_axis_ticks_invisible_inplace(ax)
+        plot_projected_prototype(proj_proto, ax, rect_color=proto_props[proto_idx][0])
+        text_ax = proto_axis[proto_idx, 1]
+        _make_axis_ticks_invisible_inplace(text_ax)
+        text_ax.text(
+            0.5,
+            0.5,
+            (
+                f"Similarity: {class_evidence.proto_similarities[proto_idx]:.2f}\n"
+                f" Weight: {class_evidence.proto_weights[proto_idx]:.4f}"
+            ),
+            horizontalalignment="center",
+            verticalalignment="center",
+            fontsize=24,
+            transform=text_ax.transAxes
+        )
+
+    plt.show()
+
 

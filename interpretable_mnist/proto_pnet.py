@@ -7,7 +7,7 @@ from torchmetrics import Accuracy
 
 from interpretable_mnist import params
 from interpretable_mnist.base_architecture import SimpleConvNetRoot
-from interpretable_mnist.core import ProjectedPrototype
+from interpretable_mnist.core import ClassEvidence, ProjectedPrototype
 
 
 def prototype_distances_to_similarities(distances: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -88,6 +88,21 @@ def _get_prototype_orthogonality_loss(prototypes: torch.Tensor) -> torch.Tensor:
 
     mean_orthogonality = sum_orthogonality / (n_classes * n_proto_per_class * (n_proto_per_class - 1))
     return mean_orthogonality
+
+
+def latent_to_input_position(
+    width_idx: int, height_idx: int, batch_shape: tuple[int, int, int, int], latent_shape: tuple[int, int, int, int]
+) -> tuple[slice, slice]:
+    latent_to_input_height = batch_shape[2] / latent_shape[2]  # = H/h
+    proto_start_height = np.rint(latent_to_input_height) * height_idx
+    proto_stop_height = proto_start_height + latent_to_input_height  # since latent height of prototype is 1
+    latent_to_input_width = batch_shape[3] / latent_shape[3]  # = W/w
+    proto_start_width = np.rint(latent_to_input_width) * width_idx
+    proto_stop_width = proto_start_width + latent_to_input_width  # since latent width of prototype is 1
+    return (
+        slice(int(proto_start_height), int(proto_stop_height)),
+        slice(int(proto_start_width), int(proto_stop_width))
+    )
 
 
 class ProtoPNetMNIST(pl.LightningModule):
@@ -265,17 +280,7 @@ class ProtoPNetMNIST(pl.LightningModule):
             dist_best_match_to_prototype = distances_to_prototype[batch_min_idx, height_min_idx, width_min_idx]
 
             best_match_training_sample = batch_data[batch_min_idx, ...]
-
-            latent_to_input_height = batch_data.shape[2] / z.shape[2]  # = H/h
-            proto_start_height = np.rint(latent_to_input_height) * height_min_idx
-            proto_stop_height = proto_start_height + latent_to_input_height  # since latent height of prototype is 1
-            latent_to_input_width = batch_data.shape[3] / z.shape[3]  # = W/w
-            proto_start_width = np.rint(latent_to_input_width) * width_min_idx
-            proto_stop_width = proto_start_width + latent_to_input_width  # since latent width of prototype is 1
-            best_match_loc = (
-                slice(int(proto_start_height), int(proto_stop_height)),
-                slice(int(proto_start_width), int(proto_stop_width))
-            )
+            best_match_loc = latent_to_input_position(width_min_idx, height_min_idx, batch_data.shape, z.shape)
 
             projected_proto = ProjectedPrototype(
                 best_match_prototype_from_batch.numpy(force=True),
@@ -300,6 +305,36 @@ class ProtoPNetMNIST(pl.LightningModule):
         )
         proj_prototypes_tensor = torch.from_numpy(proj_prototypes_numpy)[..., np.newaxis, np.newaxis]
         self.prototypes.data = proj_prototypes_tensor.to(self.prototypes.device)
+
+    def get_evidence_for_class(self, single_image: torch.Tensor, class_idx: None | int = None) -> ClassEvidence:
+        if self.projected_prototypes[0][0] is None:
+            raise RuntimeError("No projected prototypes yet, cannot make detailed prediction.")
+        batch = single_image[np.newaxis, ...]
+        z = self.conv_root(batch)  # [1, k, h, w]
+        prototype_distances = self._get_prototype_distances(z)  # [1, c, p, h, w]
+        prototype_similarities, min_distances = prototype_distances_to_similarities(prototype_distances)  # [1, c, p]
+        prediction = torch.sum(prototype_similarities * self.output_weights[np.newaxis, ...], dim=-1)  # [b, c]
+        if class_idx is None:
+            class_idx = torch.argmax(prediction)
+
+        proto_best_match_locations = []
+        for p_idx in range(self.prototypes.shape[1]):
+            distances_to_prototype = prototype_distances[:, class_idx, p_idx, ...]  # [b, h, w]
+            _, height_min_idx, width_min_idx = np.unravel_index(
+                torch.argmin(distances_to_prototype).cpu(), distances_to_prototype.shape
+            )
+            proto_best_match_locations.append(
+                latent_to_input_position(width_min_idx, height_min_idx, batch.shape, z.shape)
+            )
+        return ClassEvidence(
+            self.projected_prototypes[class_idx],
+            single_image[0, ...].detach().numpy(),
+            proto_best_match_locations,
+            prototype_similarities[0, class_idx, :],
+            min_distances[0, class_idx, :],
+            prediction[0, :].detach().numpy(),
+            self.output_weights[class_idx, :].detach().numpy(),
+        )
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)

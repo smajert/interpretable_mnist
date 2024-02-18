@@ -5,6 +5,7 @@
 - matplotlib
 - mypy==1.6.*
 - numpy
+- prettytable
 - pylint==3.0.*
 - pytest
 - pytorch==2.1.*

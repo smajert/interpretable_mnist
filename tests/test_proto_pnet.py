@@ -135,3 +135,17 @@ def test_prototype_projection():
 def test_prototype_orthogonality_calculated_correctly(prototypes, expected_loss):
     ortho_loss = proto_pnet._get_prototype_orthogonality_loss(prototypes)
     torch.testing.assert_allclose(ortho_loss, expected_loss, rtol=0, atol=1e-11)
+
+
+def test_detailed_prediction_runs():
+    train_config = params.Training()
+    train_config.n_classes, train_config.n_protos_per_class = 10, 2
+    train_config.constrain_prototypes_to_class = False
+
+    model = proto_pnet.ProtoPNetMNIST(train_config, prototype_depth=64, n_trainig_batches=1)
+    mnist_batch = next(iter(load_mnist(relative_size_split_dataset=0.)))
+    model.update_projected_prototypes(mnist_batch[0], mnist_batch[1])
+    model.push_projected_prototypes()
+    class_evidence = model.get_evidence_for_class(mnist_batch[0][0, ...])
+
+    assert len(class_evidence.prototype_locations_in_sample) == 2
