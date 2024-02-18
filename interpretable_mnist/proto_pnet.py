@@ -313,13 +313,13 @@ class ProtoPNetMNIST(pl.LightningModule):
         z = self.conv_root(batch)  # [1, k, h, w]
         prototype_distances = self._get_prototype_distances(z)  # [1, c, p, h, w]
         prototype_similarities, min_distances = prototype_distances_to_similarities(prototype_distances)  # [1, c, p]
-        prediction = torch.sum(prototype_similarities * self.output_weights[np.newaxis, ...], dim=-1)  # [b, c]
+        prediction = torch.sum(prototype_similarities * self.output_weights[np.newaxis, ...], dim=-1)  # [1, c]
         if class_idx is None:
             class_idx = torch.argmax(prediction)
 
         proto_best_match_locations = []
         for p_idx in range(self.prototypes.shape[1]):
-            distances_to_prototype = prototype_distances[:, class_idx, p_idx, ...]  # [b, h, w]
+            distances_to_prototype = prototype_distances[:, class_idx, p_idx, ...]  # [1, h, w]
             _, height_min_idx, width_min_idx = np.unravel_index(
                 torch.argmin(distances_to_prototype).cpu(), distances_to_prototype.shape
             )
