@@ -153,7 +153,7 @@ based on my limited experience with my implementation on FashionMNIST here.
 <figure id="classify_inverted_trousers">
   <img src="figures/classify_inverted_trousers.png" alt="Prediction of a ProtoPNET for an image with trousers" width="1000">
   <figcaption>
-        Figure 3: Prediction of a ProtoPNet on a pair of trousers from FashionMNIST [[3]](#3), where the image has
+        Figure 3: Prediction of a ProtoPNet on a pair of trousers from FashionMNIST [<a href="#3">3</a>], where the image has
             been inverted vertically. Interestingly, though the "red prototype" does have a very high similarity,
             its localization does not seem quite right. Note that the model was not trained with this sort of data
             augmentation, i.e. this is an out-of-distribution image for the model.
