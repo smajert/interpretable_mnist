@@ -13,10 +13,12 @@ myself, taking pointers from other implementations (especially [[1]](#1) and [[2
 <figure id="classify_trousers">
   <img src="figures/classify_trousers.png" alt="Prediction of a ProtoPNET for an image with trousers" width="1000">
   <figcaption>
-        Figure 1: Prediction of a ProtoPNet on a pair of trousers from FashionMNIST [<a href="#3">3</a>]. Note that
+        <p align="center" style="max-width: 1000px">
+        <u>Figure 1:</u> Prediction of a ProtoPNet on a pair of trousers from FashionMNIST [<a href="#3">3</a>]. Note that
             the "red prototype" has a high similarity to the image, which is why the image is classified as coming
             from the "trousers" class. The other "trousers"-prototypes (which all have a negative weight) do not fit the
             image very well. Their rectangles are placed at the points where the model deems that they fit best.
+        </p>
   </figcaption>
 </figure>
 
@@ -78,15 +80,17 @@ a low similarity score) are also depicted.
 <figure id="model_prototype_overview">
   <img src="figures/model_overview.png" alt="The learned prototypes of the model with their weights" width="1500">
   <figcaption>
-        Figure 2: Overview of all prototypes (in the red squares) of a trained ProtoPNet model and their weights. 
+        <p align="center" style="max-width: 1500px">
+        <u>Figure 2:</u> Overview of all prototypes (in the red squares) of a trained ProtoPNet model and their weights. 
             The weights are chosen to sum to one, but can be negative, indicating that matching the prototype will reduce
             the samples probability to belong to a class. Note that there seem to be some rather unusual images in the trouser
             category, one with two pairs of trousers and one with trousers and a pullover
             (<a href="#" title="At this point, I am pretty sure that both the ProtoPNet and the ConvNet are better at classifying these images than I am">?</a>)
             to be precise, that actually reduce the probability of an image belonging to the "trouser" category.
+        </p>
   </figcaption>
 </figure>
-
+  
 Let's take a closer look at how the model performs in [table 1](#tab_1), where I tested several
 model configurations using different parts of the loss term in training. The different model 
 configurations tested are:
@@ -154,10 +158,12 @@ based on my limited experience with my implementation on FashionMNIST here.
 <figure id="classify_inverted_trousers">
   <img src="figures/classify_inverted_trousers.png" alt="Prediction of a ProtoPNET for an image with trousers" width="1000">
   <figcaption>
-        Figure 3: Prediction of a ProtoPNet on a pair of trousers from FashionMNIST [<a href="#3">3</a>], where the image has
+        <p align="center" style="max-width: 1500px">
+        <u>Figure 3</u>: Prediction of a ProtoPNet on a pair of trousers from FashionMNIST [<a href="#3">3</a>], where the image has
             been inverted vertically. Interestingly, though the "red prototype" does have a very high similarity,
             its localization does not seem quite right. Note that the model was not trained with this sort of data
             augmentation, i.e. this is an out-of-distribution image for the model.
+        </p>
   </figcaption>
 </figure>
 
