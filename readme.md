@@ -13,9 +13,9 @@ myself, taking pointers from other implementations (especially [[1]](#1) and [[2
 <figure id="classify_trousers">
   <img src="figures/classify_trousers.png" alt="Prediction of a ProtoPNET for an image with trousers" width="1000">
   <figcaption>
-        Figure 1: Prediction of a ProtoPNet on a pair of trousers from FashionMNIST [[3]](#3). Note that the "red
-            prototype" has a high similarity to the image, which is why the image is classified as coming form the
-            "trousers" class. The other "trousers"-prototypes (which all have a negative weight) do not fit the
+        Figure 1: Prediction of a ProtoPNet on a pair of trousers from FashionMNIST [<a href="#3">3</a>]. Note that
+            the "red prototype" has a high similarity to the image, which is why the image is classified as coming
+            from the "trousers" class. The other "trousers"-prototypes (which all have a negative weight) do not fit the
             image very well. Their rectangles are placed at the points where the model deems that they fit best.
   </figcaption>
 </figure>
@@ -73,16 +73,17 @@ visualize all the prototypes of the model to get an idea of what the model is lo
 (see fig. [2](#model_prototype_overview)). When performing a prediction, the model also informs you of the
 similarity of the prototypes to the image, and which area in the image is similar to the prototypes, as can be seen in
 fig. [1](#classify_trousers). Note that fig. [1](#classify_trousers) shows all prototypes of the
-class the image was predicted as, meaning prototypes of the class that do not really fit (i.e. they have a low similarity score) are also depicted.
+class the image was predicted as, meaning prototypes of the class that do not really fit (i.e. they have
+a low similarity score) are also depicted.
 <figure id="model_prototype_overview">
   <img src="figures/model_overview.png" alt="The learned prototypes of the model with their weights" width="1500">
   <figcaption>
         Figure 2: Overview of all prototypes (in the red squares) of a trained ProtoPNet model and their weights. 
             The weights are chosen to sum to one, but can be negative, indicating that matching the prototype will reduce
             the samples probability to belong to a class. Note that there seem to be some rather unusual images in the trouser
-            category, one with two trousers and one with a trouser and a pullover ([?](## "At this point, I am pretty sure
-            that both ProtoPNets and ConvNets are better at classifying these images than I am")) to be precise, that
-            actually reduce the probability of an image belonging to the "trouser" category.
+            category, one with two pairs of trousers and one with trousers and a pullover
+            (<a href="#" title="At this point, I am pretty sure that both the ProtoPNet and the ConvNet are better at classifying these images than I am">?</a>)
+            to be precise, that actually reduce the probability of an image belonging to the "trouser" category.
   </figcaption>
 </figure>
 
