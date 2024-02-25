@@ -47,11 +47,11 @@ def train_proto_pnet(do_evaluation: bool) -> ProtoPNetMNIST:
         plot_model_prototypes(proto_model.projected_prototypes, proto_model.output_weights.detach().numpy())
 
         test_batch = next(iter(mnist_test))
-        class_evidence = trainer.model.get_evidence_for_class(test_batch[0][1, ...])
+        class_evidence = trainer.model.get_evidence_for_class(test_batch[0][5, ...])
         plot_class_evidence(class_evidence)
 
         augmented_batch = next(iter(mnist_augmented))
-        class_evidence = trainer.model.get_evidence_for_class(augmented_batch[0][1, ...])
+        class_evidence = trainer.model.get_evidence_for_class(augmented_batch[0][5, ...])
         plot_class_evidence(class_evidence)
 
     return trainer.model
