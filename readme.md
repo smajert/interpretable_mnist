@@ -16,7 +16,7 @@ myself, taking pointers from other implementations (especially [[1]](#1) and [[2
         Figure 1: Prediction of a ProtoPNet on a pair of trousers from FashionMNIST [[3]](#3). Note that the "red
             prototype" has a high similarity to the image, which is why the image is classified as coming form the
             "trousers" class. The other "trousers"-prototypes (which all have a negative weight) do not fit the
-            image very well. Their rectangles are place at the points where the model deems that they fit best.
+            image very well. Their rectangles are placed at the points where the model deems that they fit best.
   </figcaption>
 </figure>
 
@@ -63,7 +63,7 @@ similarity of an image to a class.
 During training, the loss function for a ProtoPNet is slightly different from that of a traditional ConvNet,
 and consists of the following terms (see [[2]](#2), [[1]](#1)):
 - Cross-Entropy loss $L_e$ - The standard cross-entropy loss you would also use for training a traditional ConvNet
-- Orthogonality loss $L_r$ - Difference between the prototypes as measured by cosine similarity
+- Orthogonality loss $L_r$ - Difference between the prototypes of the **same** class as measured by cosine similarity
 - Cluster loss $L_c$ - Minimum distance between prototypes of a class and samples of the **same** class
 - Separation loss $L_s$ - Minimum distance between prototypes of a class and samples of the **other** classes
 
@@ -72,7 +72,7 @@ To test the model, I use the FashionMNIST [[3]](#3) dataset. It is neat that, af
 visualize all the prototypes of the model to get an idea of what the model is looking for in the data
 (see fig. [2](#model_prototype_overview)). When performing a prediction, the model also informs you of the
 similarity of the prototypes to the image, and which area in the image is similar to the prototypes, as can be seen in
-fig. [1](#classify_trousers). Note that fig. [2](#classify_trousers) shows all prototypes of the
+fig. [1](#classify_trousers). Note that fig. [1](#classify_trousers) shows all prototypes of the
 class the image was predicted as, meaning prototypes of the class that do not really fit (i.e. they have a low similarity score) are also depicted.
 <figure id="model_prototype_overview">
   <img src="figures/model_overview.png" alt="The learned prototypes of the model with their weights" width="1500">
@@ -95,13 +95,13 @@ configurations tested are:
 - "Manhattan distance" - Calculated the distance to the prototypes with Manhattan instead of Euclidean distance
 - "unconstrained" - Remove constraint that prototypes for a certain class have to come from images of that class
 
-|                        | $L_e$     | $ + L_r$   | $ + 0.8 L_c$ | $ - 0.08 L_s$ | 
-|------------------------|-----------|------------|--------------|---------------|
-| baseline               | 75.7/43.3 | 82.0/50.4  | 81.2/46.8    | 80.6/47.5     |
-| with batch norm        | 67.2/33.5 | 82.4/50.0  | 77.8/43.7    | 81.4/37.9     |
-| with transfer learning | 79.5/48.2 | 82.8/48.6  | 80.3/45.0    | 83.8/49.8     |
-| Manhattan distance     | 80.8/43.4 | 80.7/48.2  | 79.4/45.3    | 80.4/49.2     |
-| unconstrained          | 83.1/42.3 | 81.2/47.4  | 81.9/51.7    | 83.4/54.0     |
+|                        | $L_e$     | + $L_r$   | + 0.8 $L_c$ | - 0.08 $L_s$ | 
+|------------------------|-----------|-----------|-------------|--------------|
+| baseline               | 75.7/43.3 | 82.0/50.4 | 81.2/46.8   | 80.6/47.5    |
+| with batch norm        | 67.2/33.5 | 82.4/50.0 | 77.8/43.7   | 81.4/37.9    |
+| with transfer learning | 79.5/48.2 | 82.8/48.6 | 80.3/45.0   | 83.8/49.8    |
+| Manhattan distance     | 80.8/43.4 | 80.7/48.2 | 79.4/45.3   | 80.4/49.2    |
+| unconstrained          | 83.1/42.3 | 81.2/47.4 | 81.9/51.7   | 83.4/54.0    |
 <p align="center" style="max-width: 500px">
 <a id="tab_1">Table 1</a>: Accuracy [%] of different classification models during a single training run on the
 test data and the vertically flipped test data, where in each column an additional loss term is
@@ -140,11 +140,11 @@ enough that running a few more epochs is not constraining.
 This is of course a question that will depend heavily on your specific requirements and I cannot answer for you.
 However, I can give my thoughts on the Pros and Cons of ProtoPNets. Bear in mind though that these are **solely**
 based on my limited experience with my implementation on FashionMNIST here.
-Pros: 
+### Pros: 
  - Provide a certain degree of interpretability to your predictions ...
  - Comparable accuracy as non-interpretable counterparts according to [[2]](#2) and [[1]](#1) ...
  - Might be more robust to deviations of novel data from the training data.
-Cons:
+### Cons:
  - ... though prototype similarity as perceived by the model can be confusing (see fig. [3](#classify_inverted_trousers)
  - ... which might be difficult to replicate (I could not do so here, might be an error on my part though).
  - Not "off-the-shelf" models, require more work to set up than analogous non-interpretable model
@@ -171,7 +171,7 @@ I think this can be avoided by carefully selecting the settings of the convoluti
 essentially avoiding overlap between the kernels, which I tried to do here.
 So the areas that mark the prototypes in the training images **should** actually correspond exactly to what
 the model uses (though fig. [3](#classify_inverted_trousers) really does look like there still is a localization
-problem, so I might be mistaken :-) ).
+problem, so I might be mistaken :smile:).
 
 
 ## References
