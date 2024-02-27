@@ -91,38 +91,52 @@ def _get_prototype_orthogonality_loss(prototypes: torch.Tensor) -> torch.Tensor:
 
 
 def latent_to_input_position(
-    width_idx: int, height_idx: int, batch_shape: tuple[int, int, int, int], latent_shape: tuple[int, int, int, int]
+    width_idx: int, height_idx: int, input_shape: tuple[int, int, int], latent_shape: tuple[int, int, int]
 ) -> tuple[slice, slice]:
-    latent_to_input_height = batch_shape[2] / latent_shape[2]  # = H/h
+    """
+    Convert a position in latent space to the edges of the corresponding rectangle in input/real space.
+
+    Note: This is only valid assuming the map to latent space is done by ConvNets without kernel overlap!
+        In other words this is not true in general, i.e. for an arbitrary ConvNet.
+
+    :param width_idx: Width position in latent space
+    :param height_idx: Height position in latent space
+    :param input_shape: Shape of the input sample (channel x height x width)
+    :param latent_shape: Shape of the latent space (channel x height x width)
+    :return: Slices marking the rectangular area in input space that corresponds to the given position in latent space
+    """
+    latent_to_input_height = input_shape[1] / latent_shape[1]  # = H/h
     proto_start_height = np.rint(latent_to_input_height) * height_idx
     proto_stop_height = proto_start_height + latent_to_input_height  # since latent height of prototype is 1
-    latent_to_input_width = batch_shape[3] / latent_shape[3]  # = W/w
+    latent_to_input_width = input_shape[2] / latent_shape[2]  # = W/w
     proto_start_width = np.rint(latent_to_input_width) * width_idx
     proto_stop_width = proto_start_width + latent_to_input_width  # since latent width of prototype is 1
     return (
         slice(int(proto_start_height), int(proto_stop_height)),
-        slice(int(proto_start_width), int(proto_stop_width))
+        slice(int(proto_start_width), int(proto_stop_width)),
     )
 
 
 class ProtoPNetMNIST(pl.LightningModule):
-    def __init__(
-        self,
-        train_info: params.Training,
-        n_trainig_batches: int,
-        prototype_depth: int = 64
-    ) -> None:
-        """
-        :param prototype_depth: d - Amount of values in each prototype, should be the same as channel amount of
-            root convolution layers k
-        """
+    """
+    Implementation of a ProtoPNet, similar to what is described in [2].
+
+    :param train_info: Hyperparameters of the model (see interpetable_mnist/params.py for detailed info).
+    :param n_training_batches: Amount of batches used during training; this value is important so that the
+        learned prototypes can be replaced with prototypes corresponding to parts of the latents of actual
+        samples ("pushing prototypes") after the last batch has been processed.
+    :param prototype_depth: Amount of entries in a prototype vector; should be the same as channel amount at the
+        last root convolutional layer (k)
+    """
+
+    def __init__(self, train_info: params.Training, n_training_batches: int, prototype_depth: int = 64) -> None:
         super().__init__()
 
         self.minkowski_distance_order = train_info.minkowski_distance_order
         self.learning_rate = train_info.learning_rate
         self.lr_plateau_reduction_min_lr = train_info.lr_plateau_reduction_min_lr
         self.lr_plateau_reduction_factor = train_info.lr_plateau_reduction_factor
-        self.lr_plateau_reduction_patience = train_info.lr_pleateau_reduction_patience
+        self.lr_plateau_reduction_patience = train_info.lr_plateau_reduction_patience
 
         self.n_classes = train_info.n_classes  # c - Amount of different classes to predict; 10 for MNIST
         self.n_protos_per_class = train_info.n_protos_per_class  # p - Amount of prototypes each class gets
@@ -137,7 +151,7 @@ class ProtoPNetMNIST(pl.LightningModule):
         self.orthogonality_loss_weight = train_info.orthogonality_loss_weight
         self.separation_loss_weight = train_info.separation_loss_weight
 
-        self.n_training_batches = n_trainig_batches
+        self.n_training_batches = n_training_batches
 
         # --- Setup convolution layers f: ---
         self.conv_root = SimpleConvNetRoot(
@@ -171,7 +185,9 @@ class ProtoPNetMNIST(pl.LightningModule):
         # prototype shape: [c, p, d, 1, 1]
         f = self.minkowski_distance_order
         z_minus_p = z[:, np.newaxis, np.newaxis, ...] - self.prototypes[np.newaxis, ...]  # [b, c, p, k, h, w]
-        return (1 / self.prototypes.shape[2] * torch.sum(torch.abs(z_minus_p) ** f, dim=3)) ** (1/f)   # [b, c, p, h, w]
+        return (1 / self.prototypes.shape[2] * torch.sum(torch.abs(z_minus_p) ** f, dim=3)) ** (
+            1 / f
+        )  # [b, c, p, h, w]
 
     def forward(self, x: torch.Tensor):
         z = self.conv_root(x)  # [b, k, h, w]
@@ -182,6 +198,7 @@ class ProtoPNetMNIST(pl.LightningModule):
         x = torch.sum(prototype_similarities * self.output_weights[np.newaxis, ...], dim=-1)  # [b, c]
         return x, min_distances
 
+    # pylint: disable=too-many-branches
     def training_step(self, batch: list[torch.Tensor], batch_idx: int) -> torch.Tensor:
         if self.current_epoch >= self.n_freeze_epochs:
             self.conv_root.requires_grad_(True)
@@ -198,7 +215,7 @@ class ProtoPNetMNIST(pl.LightningModule):
         if self.current_epoch in self.projection_epochs:
             if batch_idx == 0:  # make sure that no old prototype distances are present
                 self.projected_prototypes = [[None] * self.n_protos_per_class for _ in range(self.n_classes)]  # [c, p]
-                self.optimizers().param_groups[0]['lr'] = self.learning_rate
+                self.optimizers().param_groups[0]["lr"] = self.learning_rate
             self.update_projected_prototypes(x, y)
             if batch_idx == self.n_training_batches - 1:
                 print(f"Pushing protos in epoch {self.current_epoch}")
@@ -230,15 +247,13 @@ class ProtoPNetMNIST(pl.LightningModule):
 
         loss = entropy_loss + cluster_loss + separation_loss + orthogonality_loss + l1_loss
 
-        # self.log(f"cluster_loss", cluster_loss, prog_bar=False, on_step=True, on_epoch=False)
-        # self.log(f"separation_loss", separation_loss, prog_bar=False, on_step=True, on_epoch=False)
-        # self.log(f"orthogonality_loss", slot_orthogonality_loss, prog_bar=True, on_step=True, on_epoch=True)
-
         acc_calculator = Accuracy(task="multiclass", num_classes=self.n_classes).to(self.device)
         accuracy = acc_calculator(y_pred, y)
-        self.log(f"acc", accuracy, prog_bar=True, on_step=False, on_epoch=True)
+        self.log("acc", accuracy, prog_bar=True, on_step=False, on_epoch=True)
 
         return loss
+
+    # pylint: enable=too-many-branches
 
     def validation_step(self, batch: list[torch.Tensor], batch_idx: int, step_name: str = "val") -> torch.Tensor:
         x, y = batch
@@ -252,26 +267,29 @@ class ProtoPNetMNIST(pl.LightningModule):
         self.log(f"{step_name}_loss", loss)
         return loss
 
-    def test_step(self, batch:  list[torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def test_step(self, batch: list[torch.Tensor], batch_idx: int) -> torch.Tensor:
         return self.validation_step(batch, batch_idx, step_name="test")
 
     @torch.no_grad()
     def update_projected_prototypes(
-            self,
-            batch_data: torch.Tensor,  # [b, K, H, W]
-            labels: torch.Tensor,  # [b]
+        self,
+        batch_data: torch.Tensor,  # [b, K, H, W]
+        labels: torch.Tensor,  # [b]
     ) -> None:
         z = self.conv_root(batch_data)  # [b, k, h, w]
-        distances_to_protos = torch.sum(torch.abs(
-            z[:, np.newaxis, np.newaxis, ...]  # [b, 1, 1, k, h, w]
-            - self.prototypes[np.newaxis, ...]  # [1, c, p, d, 1, 1]
-        ), dim=3)  # [b, c, p, h, w]
+        distances_to_protos = torch.sum(
+            torch.abs(
+                z[:, np.newaxis, np.newaxis, ...]  # [b, 1, 1, k, h, w]
+                - self.prototypes[np.newaxis, ...]  # [1, c, p, d, 1, 1]
+            ),
+            dim=3,
+        )  # [b, c, p, h, w]
 
         for c_idx, p_idx in np.ndindex(*self.prototypes.shape[0:2]):  # iterate over indices for each prototype
             distances_to_prototype = distances_to_protos[:, c_idx, p_idx, ...]  # [b, h, w]
             if self.constrain_prototypes_to_class:
                 # make sure that only images of the class are used as prototypes for the class
-                distances_to_prototype[labels != c_idx, ...] = float('inf')
+                distances_to_prototype[labels != c_idx, ...] = float("inf")
             batch_min_idx, height_min_idx, width_min_idx = np.unravel_index(
                 torch.argmin(distances_to_prototype).cpu(), distances_to_prototype.shape
             )
@@ -280,7 +298,7 @@ class ProtoPNetMNIST(pl.LightningModule):
             dist_best_match_to_prototype = distances_to_prototype[batch_min_idx, height_min_idx, width_min_idx]
 
             best_match_training_sample = batch_data[batch_min_idx, ...]
-            best_match_loc = latent_to_input_position(width_min_idx, height_min_idx, batch_data.shape, z.shape)
+            best_match_loc = latent_to_input_position(width_min_idx, height_min_idx, batch_data.shape[1:], z.shape[1:])
 
             projected_proto = ProjectedPrototype(
                 best_match_prototype_from_batch.numpy(force=True),
@@ -300,6 +318,7 @@ class ProtoPNetMNIST(pl.LightningModule):
 
     @torch.no_grad()
     def push_projected_prototypes(self):
+        """Replace learned prototypes with part of latents from the samples."""
         proj_prototypes_numpy = np.stack(
             [[proto.prototype for proto in proto_row] for proto_row in self.projected_prototypes]
         )
@@ -307,6 +326,15 @@ class ProtoPNetMNIST(pl.LightningModule):
         self.prototypes.data = proj_prototypes_tensor.to(self.prototypes.device)
 
     def get_evidence_for_class(self, single_image: torch.Tensor, class_idx: None | int = None) -> ClassEvidence:
+        """
+        Detailed classification of a single image/sample.
+
+        :param single_image: Image to classify
+        :param class_idx: Index of the class to get the prototypes for; if `None`, the class that `single_image`
+            is predicted as will be chosen.
+        :return: Information and results of the classification, including information about the prototypes for the
+            requested `class_idx`.
+        """
         if self.projected_prototypes[0][0] is None:
             raise RuntimeError("No projected prototypes yet, cannot make detailed prediction.")
         batch = single_image[np.newaxis, ...]
@@ -324,7 +352,7 @@ class ProtoPNetMNIST(pl.LightningModule):
                 torch.argmin(distances_to_prototype).cpu(), distances_to_prototype.shape
             )
             proto_best_match_locations.append(
-                latent_to_input_position(width_min_idx, height_min_idx, batch.shape, z.shape)
+                latent_to_input_position(width_min_idx, height_min_idx, batch.shape[1:], z.shape[1:])
             )
         return ClassEvidence(
             self.projected_prototypes[class_idx],
@@ -339,14 +367,13 @@ class ProtoPNetMNIST(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
         scheduler = {
-            'scheduler': torch.optim.lr_scheduler.ReduceLROnPlateau(
+            "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer,
                 factor=self.lr_plateau_reduction_factor,
                 patience=self.lr_plateau_reduction_patience,
                 min_lr=self.lr_plateau_reduction_min_lr,
                 verbose=True,
             ),
-            'monitor': 'val_loss'  # the quantity to be monitored
+            "monitor": "val_loss",  # the quantity to be monitored
         }
         return [optimizer], [scheduler]
-

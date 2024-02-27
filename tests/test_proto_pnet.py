@@ -16,7 +16,7 @@ def test_prototype_distances_to_similarities():
     height, width = 3, 3
 
     distances = torch.ones(size=(n_samples_batch, n_classes, n_protos_per_class, height, width)) * 0.5
-    distances[0, 0, 0, 0, 0] = 0.
+    distances[0, 0, 0, 0, 0] = 0.0
     distances[1, 0, 0, 0, 0] = 0.2
     similarities, min_distances = proto_pnet.prototype_distances_to_similarities(distances)
 
@@ -28,7 +28,7 @@ def test_prototype_distances_to_similarities():
 def test_prototypes_are_differentiated_when_calling_distance():
     train_config = params.Training()
     train_config.n_classes, train_config.n_prototypes, train_config.n_slots_per_class = 3, 10, 2
-    model = proto_pnet.ProtoPNetMNIST(train_config, prototype_depth=64, n_trainig_batches=1)
+    model = proto_pnet.ProtoPNetMNIST(train_config, 1, prototype_depth=64)
     assert model.prototypes.grad is None
 
     n, k, h, w = 20, 64, 3, 3
@@ -43,18 +43,19 @@ PROTOTYPES_SHAPE = (10, 1, 64, 1, 1)  # c, p, d, 1, 1
 
 
 @pytest.mark.parametrize(
-    "prototypes, expc_result", [
+    "prototypes, expc_result",
+    [
         (torch.ones(size=PROTOTYPES_SHAPE), (1 - 1)),  # expected: sqrt(1 / d * d * (1-1)) ** 2 = 1-1
         ((0.5 * torch.ones(size=PROTOTYPES_SHAPE)), (1 - 0.5)),  # expected: sqrt(1 / d * d * (1-0.5)**2) = 1-0.5
         (np.pi * torch.ones(size=PROTOTYPES_SHAPE), (math.pi - 1)),  # expected: sqrt(1 / d * d * |1-pi|)**2  = pi-1
-    ]
+    ],
 )
 def test_distance_implementation_works_correctly(prototypes, expc_result):
     train_config = params.Training()
     train_config.n_classes = PROTOTYPES_SHAPE[0]
     train_config.n_protos_per_class = PROTOTYPES_SHAPE[1]
     train_config.minkowski_distance_order = 2
-    model = proto_pnet.ProtoPNetMNIST(train_config, prototype_depth=PROTOTYPES_SHAPE[2], n_trainig_batches=1)
+    model = proto_pnet.ProtoPNetMNIST(train_config, prototype_depth=PROTOTYPES_SHAPE[2], n_training_batches=1)
     model.prototypes = torch.nn.Parameter(prototypes)
 
     n, k, h, w = 20, PROTOTYPES_SHAPE[2], 3, 3
@@ -67,7 +68,7 @@ def test_distance_implementation_works_correctly(prototypes, expc_result):
 def test_proto_pnet_model_runs():
     train_config = params.Training()
     train_config.n_classes, train_config.n_protos_per_class = 10, 2
-    model = proto_pnet.ProtoPNetMNIST(train_config, prototype_depth=64, n_trainig_batches=1)
+    model = proto_pnet.ProtoPNetMNIST(train_config, prototype_depth=64, n_training_batches=1)
     dummy_input = torch.tensor(np.random.uniform(low=0, high=1, size=(10, 1, 28, 28)).astype(np.float32))
     class_pred, _ = model(dummy_input)
     assert class_pred[0].shape[0] == train_config.n_classes
@@ -104,9 +105,9 @@ def test_prototype_projection():
     train_config.n_classes, train_config.n_protos_per_class = 10, 2
     train_config.constrain_prototypes_to_class = False
 
-    model = proto_pnet.ProtoPNetMNIST(train_config, prototype_depth=64, n_trainig_batches=1)
+    model = proto_pnet.ProtoPNetMNIST(train_config, prototype_depth=64, n_training_batches=1)
     model.eval()  # need to set to eval because otherwise conv_root will be called with dropout
-    mnist_batch = next(iter(load_mnist(relative_size_split_dataset=0.)))
+    mnist_batch = next(iter(load_mnist(relative_size_split_dataset=0.0)))
     z = model.conv_root(mnist_batch[0])
     prototype = z[0, :, 0, 0]
 
@@ -126,11 +127,12 @@ def test_prototype_projection():
 
 
 @pytest.mark.parametrize(
-    "prototypes, expected_loss", [
+    "prototypes, expected_loss",
+    [
         (torch.tensor([[[1, 0, 0, 0], [0, 1, 0, 0]], [[0, 0, 1, 0], [0, 0, 0, 1]]], dtype=torch.float32), 0.0),
         (torch.tensor([[[1, 0, 0], [-1, 0, 0]], [[0, -1, 0], [0, 1, 0]]], dtype=torch.float32), 1.0),
         (torch.tensor([[[0, 0, 1], [0, 0, 1]], [[0, 1, 0], [0, 1, 0]]], dtype=torch.float32), 1.0),
-    ]
+    ],
 )
 def test_prototype_orthogonality_calculated_correctly(prototypes, expected_loss):
     ortho_loss = proto_pnet._get_prototype_orthogonality_loss(prototypes)
@@ -142,8 +144,8 @@ def test_detailed_prediction_runs():
     train_config.n_classes, train_config.n_protos_per_class = 10, 2
     train_config.constrain_prototypes_to_class = False
 
-    model = proto_pnet.ProtoPNetMNIST(train_config, prototype_depth=64, n_trainig_batches=1)
-    mnist_batch = next(iter(load_mnist(relative_size_split_dataset=0.)))
+    model = proto_pnet.ProtoPNetMNIST(train_config, prototype_depth=64, n_training_batches=1)
+    mnist_batch = next(iter(load_mnist(relative_size_split_dataset=0.0)))
     model.update_projected_prototypes(mnist_batch[0], mnist_batch[1])
     model.push_projected_prototypes()
     class_evidence = model.get_evidence_for_class(mnist_batch[0][0, ...])

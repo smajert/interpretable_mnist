@@ -4,6 +4,13 @@ line-length = 120
 [tool.pylint]
 max-line-length = 120
 ignored-modules = ["numpy", "torch"]
+disable = """
+    arguments-differ,
+    missing-module-docstring,
+    not-callable,
+    too-many-instance-attributes,
+    too-many-locals,
+"""
 
 [tool.mypy]
 ignore_missing_imports = true

@@ -35,7 +35,7 @@ Note while you can technically run this on a CPU, this is probably not going to 
 and a pytorch-compatible GPU is recommended.
 
 ## (Way too short) explanation of ProtoPNets
-Essentially, ProtoPNets start out as normal convolution neural network (ConvNet) on the input side,
+Essentially, ProtoPNets start out as normal Convolution neural Network (ConvNet) on the input side,
 but where a "normal" ConvNet would converge into fully-connected layers (i.e. after all the convolutions)
 a ProtoPNet has some form of prototype layer and one final layer afterward that is akin to a fully-connected layer
 (see [[2]](#2) for a pictorial overview). 
