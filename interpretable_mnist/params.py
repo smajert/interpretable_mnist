@@ -27,7 +27,7 @@ class Training:
     projection_epochs: tuple[int, ...] = (10, 20, 30, 40)  # when to perform prototypes projection -
     # --- should be sorted with highest epoch last! - Epochs start at 0
     n_freeze_epochs: int = 3  # number of epochs to freeze the convolutional root of the ProtoPNet
-    cluster_loss_weight: float = None  # how to weight the cluster loss, `None` means do not use this loss
-    l1_loss_weight: float = None  # how to weight the l1-loss for the last layer, `None` means do not use this loss
-    orthogonality_loss_weight: float = None  # how to weight the orthogonality loss, `None` means do not use this loss
-    separation_loss_weight: float = None  # how to weight the separation loss, `None` means do not use this loss
+    cluster_loss_weight: float | None = None  # how to weight the cluster loss, `None` means do not use this loss
+    l1_loss_weight: float | None = None  # how to weight the last layer l1-loss, `None` means do not use this loss
+    orthogonality_loss_weight: float | None = None  # how to weight the orthogonality loss, `None` means do not use
+    separation_loss_weight: float | None = None  # how to weight the separation loss, `None` means do not use this loss

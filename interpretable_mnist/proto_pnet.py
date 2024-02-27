@@ -162,7 +162,9 @@ class ProtoPNetMNIST(pl.LightningModule):
         # --- Setup prototypes layer g: ---
         prototypes_shape = (self.n_classes, self.n_protos_per_class, prototype_depth, 1, 1)  # [c, p, d, 1, 1]
         self.prototypes = torch.nn.Parameter(torch.rand(prototypes_shape))  # [c, p, d, 1, 1]
-        self.projected_prototypes = [[None] * self.n_protos_per_class for _ in range(self.n_classes)]  # [c, p]
+        self.projected_prototypes: list[list[ProjectedPrototype | None]] = [
+            [None] * self.n_protos_per_class for _ in range(self.n_classes)
+        ]  # [c, p]
 
         # --- Setup weights that connect only class prototype to prediction for class: ---
         self.output_weights = torch.nn.Parameter(torch.rand((self.n_classes, self.n_protos_per_class)))  # [c, p]
@@ -229,15 +231,15 @@ class ProtoPNetMNIST(pl.LightningModule):
         if self.cluster_loss_weight is not None:
             cluster_loss = torch.mean(_get_min_in_cluster_distance(y, min_distances)) * self.cluster_loss_weight
         else:
-            cluster_loss = 0.0
+            cluster_loss = torch.tensor(0.0)
         if self.separation_loss_weight is not None:
             separation_loss = torch.mean(_get_min_out_cluster_distance(y, min_distances)) * self.separation_loss_weight
         else:
-            separation_loss = 0.0
+            separation_loss = torch.tensor(0.0)
         if self.orthogonality_loss_weight is not None:
             orthogonality_loss = _get_prototype_orthogonality_loss(self.prototypes) * self.orthogonality_loss_weight
         else:
-            orthogonality_loss = 0.0
+            orthogonality_loss = torch.tensor(0.0)
         if self.l1_loss_weight is not None:
             l1_loss = (
                 torch.linalg.vector_norm(self.output_weights, ord=1) / (self.n_classes * self.n_protos_per_class)
@@ -298,11 +300,13 @@ class ProtoPNetMNIST(pl.LightningModule):
             dist_best_match_to_prototype = distances_to_prototype[batch_min_idx, height_min_idx, width_min_idx]
 
             best_match_training_sample = batch_data[batch_min_idx, ...]
-            best_match_loc = latent_to_input_position(width_min_idx, height_min_idx, batch_data.shape[1:], z.shape[1:])
+            best_match_loc = latent_to_input_position(
+                int(width_min_idx), int(height_min_idx), batch_data.shape[1:], z.shape[1:]
+            )
 
             projected_proto = ProjectedPrototype(
                 best_match_prototype_from_batch.numpy(force=True),
-                dist_best_match_to_prototype,
+                float(dist_best_match_to_prototype),
                 best_match_training_sample.numpy(force=True),
                 best_match_loc,
             )
@@ -343,7 +347,7 @@ class ProtoPNetMNIST(pl.LightningModule):
         prototype_similarities, min_distances = prototype_distances_to_similarities(prototype_distances)  # [1, c, p]
         prediction = torch.sum(prototype_similarities * self.output_weights[np.newaxis, ...], dim=-1)  # [1, c]
         if class_idx is None:
-            class_idx = torch.argmax(prediction)
+            class_idx = int(torch.argmax(prediction))
 
         proto_best_match_locations = []
         for p_idx in range(self.prototypes.shape[1]):
@@ -352,14 +356,14 @@ class ProtoPNetMNIST(pl.LightningModule):
                 torch.argmin(distances_to_prototype).cpu(), distances_to_prototype.shape
             )
             proto_best_match_locations.append(
-                latent_to_input_position(width_min_idx, height_min_idx, batch.shape[1:], z.shape[1:])
+                latent_to_input_position(int(width_min_idx), int(height_min_idx), batch.shape[1:], z.shape[1:])
             )
         return ClassEvidence(
             self.projected_prototypes[class_idx],
             single_image[0, ...].detach().numpy(),
             proto_best_match_locations,
-            prototype_similarities[0, class_idx, :],
-            min_distances[0, class_idx, :],
+            prototype_similarities[0, class_idx, :].detach().numpy(),
+            min_distances[0, class_idx, :].detach().numpy(),
             prediction[0, :].detach().numpy(),
             self.output_weights[class_idx, :].detach().numpy(),
         )

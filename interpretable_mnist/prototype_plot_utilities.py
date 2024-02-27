@@ -40,7 +40,7 @@ def _plot_projected_prototype(proto: ProjectedPrototype, axis: plt.Axes, rect_co
     axis.add_patch(rectangle)
 
 
-def _make_axis_ticks_invisible_inplace(axis: plt.axis) -> None:
+def _make_axis_ticks_invisible_inplace(axis: plt.Axes) -> None:
     axis.spines["top"].set_visible(False)
     axis.spines["right"].set_visible(False)
     axis.spines["left"].set_visible(False)
