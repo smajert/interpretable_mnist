@@ -1,11 +1,17 @@
 # developed with python 3.10
-- black==23.10.*
-- flake8==6.1.*
-- lightning==2.1.*
-- matplotlib
-- mypy==1.6.*
-- numpy
-- prettytable
-- pylint==3.0.*
-- pytest
-- pytorch==2.1.*
+black==23.10.*
+flake8==6.1.*
+lightning==2.1.*
+matplotlib
+mypy==1.6.*
+numpy
+prettytable
+pylint==3.0.*
+pytest
+pytorch-lightning==2.1.*
+torchmetrics
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.2.0
+torchaudio==2.2.0
+torchvision==0.17.0
+

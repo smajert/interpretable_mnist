@@ -117,8 +117,8 @@ in the text.
 To get the elephant out of the room first, while an accuracy of about 80% on the test data is of course way
 better than random guessing (according to the GitHub page of [[3]](#3), the accuracy of humans with no
 fashion expertise should be
-around 83.5%), it is noticeably worse than that of other models, which easily achieve scores in the low-to mid
-nineties (see the GitHub page of [[3]](#3)). Even running the rather simple ConvNet that comes in this
+around 83.5%), it is noticeably worse than that of other models, which easily achieve scores in the low- to mid-nineties
+(see the GitHub page of [[3]](#3)). Even running the rather simple ConvNet that comes in this
 repository (and, in contrast to the ProtoPNet, took only a few hours to get working) gives me a result of
 90.9% with batch norm and 89.2% without it. 
 While the performance on the vertically flipped test data dropped to 26.9% and 29.7% with and without batch norm, 
@@ -178,7 +178,7 @@ I think this can be avoided by carefully selecting the settings of the convoluti
 essentially avoiding overlap between the kernels, which I tried to do here.
 So the areas that mark the prototypes in the training images **should** actually correspond exactly to what
 the model uses (though fig. [3](#classify_inverted_trousers) really does look like there still is a localization
-problem, so I might be mistaken :smile:).
+problem, so I might be mistaken :smile: ).
 
 
 ## References

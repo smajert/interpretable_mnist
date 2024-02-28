@@ -121,7 +121,7 @@ class ProtoPNetMNIST(pl.LightningModule):
     """
     Implementation of a ProtoPNet, similar to what is described in [2].
 
-    :param train_info: Hyperparameters of the model (see interpetable_mnist/params.py for detailed info).
+    :param train_info: Hyperparameters of the model (see interpretable_mnist/params.py for detailed info).
     :param n_training_batches: Amount of batches used during training; this value is important so that the
         learned prototypes can be replaced with prototypes corresponding to parts of the latents of actual
         samples ("pushing prototypes") after the last batch has been processed.
